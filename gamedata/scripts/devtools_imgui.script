@@ -1,0 +1,1053 @@
+--[[
+=======================================================================================
+    DevTools ImGui Panel - Standalone Debug UI for S.T.A.L.K.E.R. Anomaly
+    
+    Self-contained ImGui window providing:
+    - Module browser: Discover and select ANY Lua module to profile
+    - Performance profiler: Live function timing statistics
+    - Log viewer: Filtered, paginated log display
+    
+    No dependencies on any other mod - works out of the box.
+    Auto-registers with Anomaly's ImGui system on game start.
+=======================================================================================
+--]]
+
+-- ============================================================================
+-- WINDOW STATE
+-- ============================================================================
+
+local show_profiler_window = false
+local show_logs_window = false
+
+-- ============================================================================
+-- PROFILER TAB STATE
+-- ============================================================================
+
+local hide_fast_functions = false
+local sort_column = 3           -- Default: Avg (ms)
+local sort_ascending = false    -- Descending (slowest first)
+
+-- Module browser state
+local available_modules = {}
+local module_browser_expanded = false
+local last_module_scan = 0
+local MODULE_SCAN_INTERVAL = 5000  -- Rescan every 5 seconds
+local module_search_text = ""      -- Search filter for module browser
+
+-- Presets state
+local preset_name_input = ""
+local show_preset_popup = false
+
+-- CSV export state
+local last_csv_export_path = nil
+local last_csv_export_time = 0
+local CSV_EXPORT_MESSAGE_DURATION = 5000  -- Show message for 5 seconds
+
+-- ============================================================================
+-- LOGGING TAB STATE
+-- ============================================================================
+
+local selected_severity_index = 1  -- 1=All
+local current_page = 1
+local ENTRIES_PER_PAGE = 50
+local cached_log_entries = {}
+local last_log_cache_update = 0
+local LOG_CACHE_INTERVAL = 250
+local log_search_text = ""         -- Search filter for log entries
+local category_search_text = ""    -- Search filter for categories
+
+-- ============================================================================
+-- WINDOW RENDER FUNCTIONS
+-- ============================================================================
+
+function render_profiler_window()
+    ImGui.SetNextWindowSize(vector2(800, 600), ImGuiCond.FirstUseEver)
+    
+    local expanded, visible = ImGui.Begin("DevTools - Profiler", show_profiler_window, ImGuiWindowFlags.None)
+    show_profiler_window = visible
+    
+    if expanded then
+        render_profiler_tab()
+    end
+    
+    ImGui.End()
+end
+
+function render_logs_window()
+    ImGui.SetNextWindowSize(vector2(900, 500), ImGuiCond.FirstUseEver)
+    
+    local expanded, visible = ImGui.Begin("DevTools - Logs", show_logs_window, ImGuiWindowFlags.None)
+    show_logs_window = visible
+    
+    if expanded then
+        render_logging_tab()
+    end
+    
+    ImGui.End()
+end
+
+-- ============================================================================
+-- PROFILER TAB
+-- ============================================================================
+
+function render_profiler_tab()
+    if not devtools_profiler then
+        ImGui.TextColored(fcolor():set(1, 0.5, 0.5, 1), "devtools_profiler.script not loaded")
+        return
+    end
+    
+    -- Module browser section (includes presets)
+    render_module_browser()
+    
+    ImGui.Separator()
+    
+    -- Profiling controls
+    render_profiling_controls()
+    
+    ImGui.Separator()
+    
+    -- Stats table
+    render_stats_table()
+end
+
+function render_module_browser()
+    -- Refresh available modules periodically
+    local tg = time_global()
+    if tg - last_module_scan > MODULE_SCAN_INTERVAL then
+        available_modules = devtools_profiler.discover_modules()
+        last_module_scan = tg
+    end
+    
+    -- Collapsible module browser
+    if ImGui.CollapsingHeader("Module Browser - Select modules to profile", 0) then
+        module_browser_expanded = true
+        
+        -- =============== PRESETS SECTION ===============
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.9, 1, 1))
+        ImGui.Text("Presets:")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        
+        -- Preset buttons with delete
+        local preset_names = devtools_profiler.get_preset_names()
+        if #preset_names > 0 then
+            for _, name in ipairs(preset_names) do
+                -- Load button
+                if ImGui.Button(name .. "##preset_load", vector2(0, 0)) then
+                    devtools_profiler.load_preset(name)
+                end
+                ImGui.SameLine(0, 2)
+                -- Delete button (small X)
+                ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.5, 0.2, 0.2, 1))
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, fcolor():set(0.8, 0.3, 0.3, 1))
+                if ImGui.Button("x##del_" .. name, vector2(18, 0)) then
+                    devtools_profiler.delete_preset(name)
+                end
+                ImGui.PopStyleColor(2)
+                ImGui.SameLine(0, 10)
+            end
+        else
+            ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+            ImGui.Text("(none)")
+            ImGui.PopStyleColor(1)
+            ImGui.SameLine()
+        end
+        
+        -- Save preset button
+        if ImGui.Button("Save...", vector2(50, 0)) then
+            show_preset_popup = true
+            preset_name_input = ""
+        end
+        
+        -- Save preset popup (inline)
+        if show_preset_popup then
+            ImGui.SameLine()
+            ImGui.Text("Name:")
+            ImGui.SameLine()
+            local new_name, name_changed = ImGui.InputText("##preset_name", preset_name_input, 30)
+            if name_changed then
+                preset_name_input = new_name
+            end
+            ImGui.SameLine()
+            if ImGui.Button("OK##save_preset", vector2(30, 0)) then
+                if preset_name_input ~= "" then
+                    devtools_profiler.save_preset(preset_name_input)
+                    show_preset_popup = false
+                end
+            end
+            ImGui.SameLine()
+            if ImGui.Button("Cancel##cancel_preset", vector2(50, 0)) then
+                show_preset_popup = false
+            end
+        end
+        
+        ImGui.Spacing()
+        
+        -- =============== SEARCH SECTION ===============
+        ImGui.Text("Search:")
+        ImGui.SameLine()
+        local new_search, changed = ImGui.InputText("##module_search", module_search_text, 100)
+        if changed then
+            module_search_text = new_search
+        end
+        ImGui.SameLine()
+        if ImGui.Button("X##clear_search", vector2(20, 0)) then
+            module_search_text = ""
+        end
+        
+        -- Filter modules by search
+        local filtered_modules = {}
+        local search_lower = string.lower(module_search_text)
+        for _, mod_name in ipairs(available_modules) do
+            if module_search_text == "" or string.find(string.lower(mod_name), search_lower, 1, true) then
+                table.insert(filtered_modules, mod_name)
+            end
+        end
+        
+        ImGui.SameLine(0, 20)
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        if module_search_text ~= "" then
+            ImGui.Text(string.format("Showing %d/%d modules", #filtered_modules, #available_modules))
+        else
+            ImGui.Text(string.format("%d modules found", #available_modules))
+        end
+        ImGui.PopStyleColor(1)
+        
+        ImGui.Spacing()
+        
+        -- =============== QUICK ACTIONS ===============
+        if ImGui.Button("Refresh", vector2(70, 0)) then
+            available_modules = devtools_profiler.discover_modules()
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Clear Selection", vector2(100, 0)) then
+            for _, mod_name in ipairs(devtools_profiler.get_registered_modules()) do
+                devtools_profiler.unregister_module(mod_name)
+            end
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Select Filtered", vector2(100, 0)) then
+            for _, mod_name in ipairs(filtered_modules) do
+                if not devtools_profiler.is_module_registered(mod_name) then
+                    devtools_profiler.register_module(mod_name)
+                end
+            end
+        end
+        
+        ImGui.Spacing()
+        
+        -- =============== MODULE CHECKBOXES ===============
+        local col = 0
+        local max_cols = 4
+        
+        for _, mod_name in ipairs(filtered_modules) do
+            local is_registered = devtools_profiler.is_module_registered(mod_name)
+            local is_wrapped = devtools_profiler.is_module_wrapped(mod_name)
+            
+            -- Color based on status
+            if is_wrapped then
+                ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+            elseif is_registered then
+                ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(1, 1, 0.4, 1))
+            end
+            
+            local _, new_state = ImGui.Checkbox(mod_name .. "##mod", is_registered)
+            if new_state ~= is_registered then
+                if new_state then
+                    devtools_profiler.register_module(mod_name)
+                else
+                    devtools_profiler.unregister_module(mod_name)
+                end
+            end
+            
+            if is_wrapped or is_registered then
+                ImGui.PopStyleColor(1)
+            end
+            
+            col = col + 1
+            if col < max_cols then
+                ImGui.SameLine(0, 20)
+            else
+                col = 0
+            end
+        end
+        
+        if col ~= 0 then
+            ImGui.Text("")  -- End SameLine chain
+        end
+        
+        -- Legend
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        ImGui.Text("Legend:")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+        ImGui.Text("Active")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(1, 1, 0.4, 1))
+        ImGui.Text("Registered")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.Text("Available")
+    else
+        module_browser_expanded = false
+    end
+end
+
+function render_profiling_controls()
+    local is_enabled = devtools_profiler.is_enabled()
+    local wrapped_count = devtools_profiler.get_wrapped_function_count()
+    local wrapped_modules = devtools_profiler.get_wrapped_modules()
+    local registered = devtools_profiler.get_registered_modules()
+    
+    -- Status
+    if is_enabled then
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+        ImGui.Text("PROFILING ACTIVE")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine(0, 10)
+        ImGui.Text(string.format("(%d functions in %d modules)", wrapped_count, #wrapped_modules))
+    else
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
+        ImGui.Text("PROFILING INACTIVE")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine(0, 10)
+        ImGui.Text(string.format("(%d modules selected)", #registered))
+    end
+    
+    ImGui.Spacing()
+    
+    -- Enable/Disable button
+    if is_enabled then
+        if ImGui.Button("Stop Profiling", vector2(120, 0)) then
+            devtools_profiler.disable()
+        end
+    else
+        local can_start = #registered > 0
+        if not can_start then
+            ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.3, 0.3, 0.3, 1))
+        end
+        if ImGui.Button("Start Profiling", vector2(120, 0)) then
+            if can_start then
+                devtools_profiler.enable()
+            end
+        end
+        if not can_start then
+            ImGui.PopStyleColor(1)
+            ImGui.SameLine()
+            ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(1, 0.5, 0.5, 1))
+            ImGui.Text("Select modules above first")
+            ImGui.PopStyleColor(1)
+        end
+    end
+    
+    ImGui.SameLine(0, 20)
+    
+    if ImGui.Button("Reset Stats", vector2(100, 0)) then
+        devtools_profiler.reset_all()
+    end
+    
+    ImGui.SameLine()
+    
+    if ImGui.Button("Export CSV", vector2(100, 0)) then
+        local success, path = devtools_profiler.export_to_csv()
+        if success then
+            last_csv_export_path = path
+            last_csv_export_time = time_global()
+            printf("[DEVTOOLS] CSV exported successfully to: %s", path)
+        else
+            last_csv_export_path = nil
+            last_csv_export_time = 0
+        end
+    end
+    
+    ImGui.SameLine()
+    
+    local _, new_hide = ImGui.Checkbox("Hide fast (<0.01ms)", hide_fast_functions)
+    
+    -- Show CSV export path if recently exported
+    if last_csv_export_path and (time_global() - last_csv_export_time) < CSV_EXPORT_MESSAGE_DURATION then
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+        ImGui.Text("CSV exported to:")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
+        ImGui.TextWrapped(last_csv_export_path)
+        ImGui.PopStyleColor(1)
+    elseif last_csv_export_path then
+        -- Show persistent path (always visible after export)
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        ImGui.Text("Last export:")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
+        ImGui.TextWrapped(last_csv_export_path)
+        ImGui.PopStyleColor(1)
+    end
+    if new_hide ~= hide_fast_functions then
+        hide_fast_functions = new_hide
+    end
+    
+    -- Show wrapped modules
+    if is_enabled and #wrapped_modules > 0 then
+        ImGui.Spacing()
+        ImGui.Text("Active:")
+        ImGui.SameLine()
+        for i, mod_name in ipairs(wrapped_modules) do
+            if i > 1 then ImGui.SameLine(0, 5) end
+            ImGui.PushStyleColor(ImGuiCol.Text, get_module_color_by_index(i))
+            ImGui.Text(mod_name)
+            ImGui.PopStyleColor(1)
+        end
+    end
+end
+
+function render_stats_table()
+    local all_stats = devtools_profiler.get_all_stats()
+    local names = devtools_profiler.get_tracked_functions()
+    
+    if #names == 0 then
+        ImGui.TextColored(fcolor():set(0.5, 0.5, 0.5, 1), 
+            "No data yet. Select modules and start profiling.")
+        return
+    end
+    
+    -- Build filtered list
+    local display_list = {}
+    local total_time = 0
+    local total_calls = 0
+    
+    for _, name in ipairs(names) do
+        local s = all_stats[name]
+        if s then
+            local include = true
+            if hide_fast_functions and s.avg_ms < 0.01 then
+                include = false
+            end
+            if include then
+                table.insert(display_list, {name = name, stats = s})
+                total_time = total_time + s.total_ms
+                total_calls = total_calls + s.call_count
+            end
+        end
+    end
+    
+    -- Sort
+    table.sort(display_list, function(a, b)
+        local val_a, val_b
+        if sort_column == 1 then val_a, val_b = a.name, b.name
+        elseif sort_column == 2 then val_a, val_b = a.stats.call_count, b.stats.call_count
+        elseif sort_column == 3 then val_a, val_b = a.stats.avg_ms, b.stats.avg_ms
+        elseif sort_column == 4 then val_a, val_b = a.stats.min_ms, b.stats.min_ms
+        elseif sort_column == 5 then val_a, val_b = a.stats.max_ms, b.stats.max_ms
+        elseif sort_column == 6 then val_a, val_b = a.stats.total_ms, b.stats.total_ms
+        else val_a, val_b = a.stats.avg_ms, b.stats.avg_ms end
+        
+        if sort_ascending then return val_a < val_b else return val_a > val_b end
+    end)
+    
+    -- Summary
+    ImGui.Text(string.format("Showing %d/%d functions | Total: %.1fms across %d calls",
+        #display_list, #names, total_time, total_calls))
+    ImGui.Spacing()
+    
+    -- Column definitions
+    local columns = {
+        {name = "Function", width = 260},
+        {name = "Calls", width = 55},
+        {name = "Avg (ms)", width = 65},
+        {name = "Min (ms)", width = 65},
+        {name = "Max (ms)", width = 65},
+        {name = "Total (ms)", width = 75}
+    }
+    
+    -- Table
+    if ImGui.BeginTable("DevToolsStats", 6, 4, vector2(0, 0), 0) then
+        for _, col in ipairs(columns) do
+            ImGui.TableSetupColumn(col.name, 0, col.width, 0)
+        end
+        
+        -- Header row with sorting
+        ImGui.TableNextRow()
+        for i, col in ipairs(columns) do
+            ImGui.TableNextColumn()
+            local label = col.name
+            if sort_column == i then
+                label = label .. (sort_ascending and " ^" or " v")
+            end
+            if sort_column == i then
+                ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.3, 0.5, 0.8, 1))
+            end
+            if ImGui.Button(label .. "##col" .. i, vector2(col.width - 8, 0)) then
+                if sort_column == i then
+                    sort_ascending = not sort_ascending
+                else
+                    sort_column = i
+                    sort_ascending = (i == 1)
+                end
+            end
+            if sort_column == i then
+                ImGui.PopStyleColor(1)
+            end
+        end
+        
+        -- Data rows
+        for _, item in ipairs(display_list) do
+            local s = item.stats
+            ImGui.TableNextRow()
+            
+            -- Function name (colored by module)
+            ImGui.TableNextColumn()
+            ImGui.PushStyleColor(ImGuiCol.Text, get_module_color(item.name))
+            ImGui.Text(item.name)
+            ImGui.PopStyleColor(1)
+            
+            -- Calls
+            ImGui.TableNextColumn()
+            ImGui.Text(tostring(s.call_count))
+            
+            -- Avg (colored)
+            ImGui.TableNextColumn()
+            ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.avg_ms))
+            ImGui.Text(string.format("%.3f", s.avg_ms))
+            ImGui.PopStyleColor(1)
+            
+            -- Min
+            ImGui.TableNextColumn()
+            ImGui.Text(string.format("%.3f", s.min_ms))
+            
+            -- Max (colored)
+            ImGui.TableNextColumn()
+            ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.max_ms))
+            ImGui.Text(string.format("%.2f", s.max_ms))
+            ImGui.PopStyleColor(1)
+            
+            -- Total
+            ImGui.TableNextColumn()
+            ImGui.Text(string.format("%.1f", s.total_ms))
+        end
+        
+        ImGui.EndTable()
+    end
+end
+
+-- ============================================================================
+-- LOGGING TAB
+-- ============================================================================
+
+function render_logging_tab()
+    if not devtools_logging then
+        ImGui.TextColored(fcolor():set(1, 0.5, 0.5, 1), "devtools_logging.script not loaded")
+        return
+    end
+    
+    -- Update cache
+    local tg = time_global()
+    if tg - last_log_cache_update > LOG_CACHE_INTERVAL then
+        update_log_cache()
+        last_log_cache_update = tg
+    end
+    
+    render_log_controls()
+    ImGui.Separator()
+    render_log_categories()
+    ImGui.Separator()
+    render_log_list()
+end
+
+function update_log_cache()
+    local all_entries = devtools_logging.get_entries()
+    cached_log_entries = {}
+    
+    local severity_threshold = 1
+    if selected_severity_index > 1 then
+        local map = {[2] = 1, [3] = 2, [4] = 3, [5] = 4}
+        severity_threshold = map[selected_severity_index] or 1
+    end
+    
+    local search_lower = string.lower(log_search_text)
+    
+    for _, entry in ipairs(all_entries) do
+        local include = true
+        if entry.severity < severity_threshold then include = false end
+        if include and not devtools_logging.is_category_enabled(entry.category) then
+            include = false
+        end
+        -- Search filter
+        if include and log_search_text ~= "" then
+            local msg_lower = string.lower(entry.message or "")
+            local cat_lower = string.lower(entry.category or "")
+            if not string.find(msg_lower, search_lower, 1, true) and
+               not string.find(cat_lower, search_lower, 1, true) then
+                include = false
+            end
+        end
+        if include then
+            table.insert(cached_log_entries, entry)
+        end
+    end
+end
+
+function render_log_controls()
+    local stats = devtools_logging.get_stats()
+    local paused = devtools_logging.is_paused()
+    local enabled = devtools_logging.is_enabled()
+    
+    -- Enable/Pause/Clear
+    local _, new_enabled = ImGui.Checkbox("Enabled", enabled)
+    if new_enabled ~= enabled then
+        devtools_logging.set_enabled(new_enabled)
+    end
+    
+    ImGui.SameLine()
+    
+    local pause_label = paused and "Resume" or "Pause"
+    if ImGui.Button(pause_label, vector2(60, 0)) then
+        devtools_logging.set_paused(not paused)
+    end
+    
+    ImGui.SameLine()
+    
+    if ImGui.Button("Clear", vector2(50, 0)) then
+        devtools_logging.clear()
+        cached_log_entries = {}
+    end
+    
+    ImGui.SameLine()
+    
+    local status_color = paused and fcolor():set(1, 1, 0, 1) or fcolor():set(0.5, 1, 0.5, 1)
+    ImGui.PushStyleColor(ImGuiCol.Text, status_color)
+    ImGui.Text(string.format("  %d/%d entries (total: %d)",
+        #cached_log_entries, stats.count, stats.total_logged))
+    ImGui.PopStyleColor(1)
+    
+    -- Search filter
+    ImGui.Text("Search:")
+    ImGui.SameLine()
+    local new_search, changed = ImGui.InputText("##log_search", log_search_text, 100)
+    if changed then
+        log_search_text = new_search
+        last_log_cache_update = 0  -- Force cache refresh
+        current_page = 1
+    end
+    ImGui.SameLine()
+    if ImGui.Button("X##clear_log_search", vector2(20, 0)) then
+        log_search_text = ""
+        last_log_cache_update = 0
+        current_page = 1
+    end
+    if log_search_text ~= "" then
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        ImGui.Text(string.format("(filtering by '%s')", log_search_text))
+        ImGui.PopStyleColor(1)
+    end
+    
+    -- Severity filter
+    ImGui.Text("Severity:")
+    ImGui.SameLine()
+    local severity_options = {"All", "DEBUG", "INFO", "WARN", "ERROR"}
+    for i, sev_name in ipairs(severity_options) do
+        local is_selected = (selected_severity_index == i)
+        if is_selected then
+            ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.3, 0.5, 0.8, 1))
+        end
+        if ImGui.Button(sev_name .. "##sev", vector2(0, 0)) then
+            selected_severity_index = i
+            last_log_cache_update = 0
+            current_page = 1
+        end
+        if is_selected then
+            ImGui.PopStyleColor(1)
+        end
+        if i < #severity_options then ImGui.SameLine() end
+    end
+    
+    -- Output options
+    local echo = devtools_logging.is_echo_to_console()
+    local _, new_echo = ImGui.Checkbox("Echo to console", echo)
+    if new_echo ~= echo then
+        devtools_logging.set_echo_to_console(new_echo)
+    end
+    
+    ImGui.SameLine()
+    
+    local file = devtools_logging.is_write_to_file()
+    local _, new_file = ImGui.Checkbox("Write to file", file)
+    if new_file ~= file then
+        devtools_logging.set_write_to_file(new_file)
+    end
+    
+    if file then
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        ImGui.Text("(" .. devtools_logging.get_file_path() .. ")")
+        ImGui.PopStyleColor(1)
+    end
+end
+
+function render_log_categories()
+    -- Collapsible category browser
+    if ImGui.CollapsingHeader("Category Browser - Filter log categories", 0) then
+        local categories = devtools_logging.get_categories()
+        
+        -- Search input
+        ImGui.Text("Search:")
+        ImGui.SameLine()
+        local new_cat_search, cat_changed = ImGui.InputText("##cat_search", category_search_text, 50)
+        if cat_changed then
+            category_search_text = new_cat_search
+        end
+        ImGui.SameLine()
+        if ImGui.Button("X##clear_cat_search", vector2(20, 0)) then
+            category_search_text = ""
+        end
+        
+        -- Filter categories by search
+        local filtered_categories = {}
+        local search_lower = string.lower(category_search_text)
+        for _, cat in ipairs(categories) do
+            if category_search_text == "" or string.find(string.lower(cat), search_lower, 1, true) then
+                table.insert(filtered_categories, cat)
+            end
+        end
+        
+        ImGui.SameLine(0, 20)
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        if category_search_text ~= "" then
+            ImGui.Text(string.format("Showing %d/%d categories", #filtered_categories, #categories))
+        else
+            ImGui.Text(string.format("%d categories", #categories))
+        end
+        ImGui.PopStyleColor(1)
+        
+        ImGui.Spacing()
+        
+        -- Quick actions
+        if ImGui.Button("All On", vector2(60, 0)) then
+            devtools_logging.set_all_categories_enabled(true)
+            last_log_cache_update = 0
+            current_page = 1
+        end
+        ImGui.SameLine()
+        if ImGui.Button("All Off", vector2(60, 0)) then
+            devtools_logging.set_all_categories_enabled(false)
+            last_log_cache_update = 0
+            current_page = 1
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Enable Filtered", vector2(100, 0)) then
+            for _, cat in ipairs(filtered_categories) do
+                devtools_logging.set_category_enabled(cat, true)
+            end
+            last_log_cache_update = 0
+            current_page = 1
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Disable Filtered", vector2(100, 0)) then
+            for _, cat in ipairs(filtered_categories) do
+                devtools_logging.set_category_enabled(cat, false)
+            end
+            last_log_cache_update = 0
+            current_page = 1
+        end
+        
+        ImGui.Spacing()
+        
+        -- Category checkboxes in columns
+        local col = 0
+        local max_cols = 5
+        
+        for _, cat in ipairs(filtered_categories) do
+            local cat_enabled = devtools_logging.is_category_enabled(cat)
+            local color = devtools_logging.get_category_color(cat)
+            
+            -- Color based on category color and enabled state
+            if color then
+                if cat_enabled then
+                    ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(color[1]/255, color[2]/255, color[3]/255, 1))
+                else
+                    -- Dimmed color when disabled
+                    ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(color[1]/255 * 0.5, color[2]/255 * 0.5, color[3]/255 * 0.5, 1))
+                end
+            end
+            
+            local _, new_enabled = ImGui.Checkbox(cat .. "##cat", cat_enabled)
+            if new_enabled ~= cat_enabled then
+                devtools_logging.set_category_enabled(cat, new_enabled)
+                last_log_cache_update = 0
+                current_page = 1
+            end
+            
+            if color then
+                ImGui.PopStyleColor(1)
+            end
+            
+            col = col + 1
+            if col < max_cols then
+                ImGui.SameLine(0, 15)
+            else
+                col = 0
+            end
+        end
+        
+        if col ~= 0 then
+            ImGui.Text("")  -- End SameLine chain
+        end
+        
+        -- Legend
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        ImGui.Text("Legend:")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+        ImGui.Text("Enabled")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.3, 0.3, 0.3, 1))
+        ImGui.Text("Disabled")
+        ImGui.PopStyleColor(1)
+    end
+end
+
+function render_log_list()
+    local total = #cached_log_entries
+    local total_pages = math.max(1, math.ceil(total / ENTRIES_PER_PAGE))
+    
+    if current_page > total_pages then current_page = total_pages end
+    if current_page < 1 then current_page = 1 end
+    
+    local page_start = total - ((current_page - 1) * ENTRIES_PER_PAGE)
+    local page_end = math.max(1, page_start - ENTRIES_PER_PAGE + 1)
+    
+    -- Pagination
+    if ImGui.Button("|<", vector2(25, 0)) then current_page = 1 end
+    ImGui.SameLine()
+    if ImGui.Button("<", vector2(25, 0)) then current_page = math.max(1, current_page - 1) end
+    ImGui.SameLine()
+    ImGui.Text(string.format("Page %d/%d", current_page, total_pages))
+    ImGui.SameLine()
+    if ImGui.Button(">", vector2(25, 0)) then current_page = math.min(total_pages, current_page + 1) end
+    ImGui.SameLine()
+    if ImGui.Button(">|", vector2(25, 0)) then current_page = total_pages end
+    
+    if total == 0 then
+        ImGui.TextColored(fcolor():set(0.5, 0.5, 0.5, 1), "No log entries")
+        return
+    end
+    
+    ImGui.Text(string.format("Showing %d-%d of %d", page_end, page_start, total))
+    ImGui.Separator()
+    
+    -- Entries
+    for i = page_start, page_end, -1 do
+        local entry = cached_log_entries[i]
+        if entry then
+            render_log_entry(entry)
+        end
+    end
+end
+
+function render_log_entry(entry)
+    local sev_names = devtools_logging.SEVERITY_NAMES
+    local sev_colors = devtools_logging.SEVERITY_COLORS
+    
+    -- Time
+    ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+    ImGui.Text(entry.real_time or "??:??:??")
+    ImGui.PopStyleColor(1)
+    ImGui.SameLine()
+    
+    -- Severity
+    local sev_color = sev_colors[entry.severity]
+    if sev_color then
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(sev_color[1]/255, sev_color[2]/255, sev_color[3]/255, 1))
+    end
+    ImGui.Text("[" .. (sev_names[entry.severity] or "?") .. "]")
+    if sev_color then ImGui.PopStyleColor(1) end
+    ImGui.SameLine()
+    
+    -- Category
+    local cat_color = devtools_logging.get_category_color(entry.category)
+    if cat_color then
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(cat_color[1]/255, cat_color[2]/255, cat_color[3]/255, 1))
+    end
+    ImGui.Text("[" .. (entry.category or "?") .. "]")
+    if cat_color then ImGui.PopStyleColor(1) end
+    ImGui.SameLine()
+    
+    -- Message
+    ImGui.Text(entry.message or "")
+end
+
+-- ============================================================================
+-- COLOR HELPERS
+-- ============================================================================
+
+local module_colors = {}
+local color_index = 0
+
+function get_module_color(func_name)
+    local module_name = func_name:match("^([^%.]+)%.")
+    if not module_name then
+        return fcolor():set(1, 1, 1, 1)
+    end
+    
+    if not module_colors[module_name] then
+        color_index = color_index + 1
+        module_colors[module_name] = get_module_color_by_index(color_index)
+    end
+    
+    return module_colors[module_name]
+end
+
+function get_module_color_by_index(index)
+    local palette = {
+        fcolor():set(0.5, 0.8, 1, 1),    -- Light blue
+        fcolor():set(1, 0.8, 0.5, 1),    -- Orange
+        fcolor():set(0.5, 1, 0.5, 1),    -- Green
+        fcolor():set(1, 0.5, 0.8, 1),    -- Pink
+        fcolor():set(0.8, 0.8, 0.5, 1),  -- Yellow
+        fcolor():set(0.8, 0.5, 1, 1),    -- Purple
+        fcolor():set(0.5, 1, 0.8, 1),    -- Cyan
+        fcolor():set(1, 0.6, 0.6, 1)     -- Salmon
+    }
+    return palette[((index - 1) % #palette) + 1]
+end
+
+function get_timing_color(ms)
+    if ms < 1 then
+        return fcolor():set(0.4, 1, 0.4, 1)    -- Green
+    elseif ms < 5 then
+        return fcolor():set(1, 1, 0.4, 1)      -- Yellow
+    elseif ms < 20 then
+        return fcolor():set(1, 0.7, 0.3, 1)    -- Orange
+    else
+        return fcolor():set(1, 0.4, 0.4, 1)    -- Red
+    end
+end
+
+-- ============================================================================
+-- WINDOW CONTROL API
+-- ============================================================================
+
+-- Profiler window controls
+function toggle_profiler()
+    show_profiler_window = not show_profiler_window
+end
+
+function show_profiler()
+    show_profiler_window = true
+end
+
+function hide_profiler()
+    show_profiler_window = false
+end
+
+function is_profiler_visible()
+    return show_profiler_window
+end
+
+-- Logs window controls
+function toggle_logs()
+    show_logs_window = not show_logs_window
+end
+
+function show_logs()
+    show_logs_window = true
+end
+
+function hide_logs()
+    show_logs_window = false
+end
+
+function is_logs_visible()
+    return show_logs_window
+end
+
+-- Legacy/convenience functions (toggle both, or just profiler)
+function toggle_window()
+    show_profiler_window = not show_profiler_window
+end
+
+function show()
+    show_profiler_window = true
+end
+
+function hide()
+    show_profiler_window = false
+    show_logs_window = false
+end
+
+function is_visible()
+    return show_profiler_window or show_logs_window
+end
+
+-- ============================================================================
+-- IMGUI REGISTRATION
+-- ============================================================================
+
+-- Check if ImGui.Groups is available (Anomaly's ImGui system)
+if not ImGui or not ImGui.Groups then
+    printf("[DEVTOOLS] ImGui.Groups not available, devtools_imgui disabled")
+    return
+end
+
+-- Create dedicated DevTools menu group
+ImGui.Groups.Add("DevTools")
+
+-- Add DevTools menu to the menu bar
+local RenderDevTools = ImGui.Groups.DevTools.Render
+ImGui.Groups.MenuBar.Widget(function()
+    if ImGui.BeginMenu("DevTools") then
+        RenderDevTools()
+        ImGui.EndMenu()
+    end
+end)
+
+function on_game_start()
+    -- Add menu items to the DevTools group
+    ImGui.Groups.DevTools.Widget(function()
+        local _
+        _, show_profiler_window = ImGui.MenuItem("Profiler", nil, show_profiler_window, true)
+        _, show_logs_window = ImGui.MenuItem("Logs", nil, show_logs_window, true)
+    end)
+    
+    -- Register window rendering in Main group (closes when ImGui closes)
+    ImGui.Groups.Main.Widget(function()
+        if show_profiler_window then
+            render_profiler_window()
+        end
+        if show_logs_window then
+            render_logs_window()
+        end
+    end)
+    
+    printf("[DEVTOOLS] ImGui panel registered. Open via ImGui menu -> DevTools")
+end
+
+-- Register callback
+if RegisterScriptCallback then
+    RegisterScriptCallback("on_game_start", on_game_start)
+end
+
+-- ============================================================================
+-- KEYBIND (Optional - can be customized)
+-- ============================================================================
+
+function on_key_press(key)
+    -- F9 to toggle DevTools window (customizable)
+    if key == DIK_keys.DIK_F9 then
+        toggle_window()
+    end
+end
+
+-- Register keybind
+if RegisterScriptCallback then
+    RegisterScriptCallback("on_key_press", on_key_press)
+end
