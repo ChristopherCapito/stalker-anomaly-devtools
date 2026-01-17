@@ -12,7 +12,7 @@
         -- Log messages:
         devtools_logging.info("MY_MOD", "Something happened", {key = "value"})
         devtools_logging.warn("MY_MOD", "Warning message")
-        devtools_logging.error("MY_MOD", "Error occurred")
+        devtools_logging.error_log("MY_MOD", "Error occurred")
         
         -- Or use the generic log function:
         devtools_logging.log(devtools_logging.INFO, "MY_MOD", "Message", data)

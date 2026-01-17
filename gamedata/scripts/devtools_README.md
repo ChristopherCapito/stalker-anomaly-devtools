@@ -117,7 +117,6 @@ devtools_profiler.is_enabled()                 -- Check if profiling active
 ```lua
 devtools_profiler.start_timer(name)            -- Start timing an operation
 devtools_profiler.end_timer(name)              -- End timing, returns duration_ms
-devtools_profiler.get_elapsed(name)            -- Get elapsed without stopping
 ```
 
 #### Statistics
@@ -127,12 +126,6 @@ devtools_profiler.get_all_stats()              -- Get all function stats
 devtools_profiler.get_tracked_functions()      -- Get list of tracked function names
 devtools_profiler.reset_stats(name)            -- Reset stats for a function
 devtools_profiler.reset_all()                  -- Reset all stats
-```
-
-#### CSV Export
-```lua
-devtools_profiler.export_to_csv(filepath)       -- Export all stats to CSV (filepath optional)
-devtools_profiler.get_csv_export_path()        -- Get default CSV export path
 ```
 
 #### CSV Export
@@ -316,23 +309,22 @@ RegisterScriptCallback("on_game_start", on_game_start)
 
 ### Timer Precision
 
-The profiler uses multiple timing methods in order of preference:
-1. **profile_timer** (X-Ray C++ timer) - Microsecond precision
-2. **os.clock** - Platform-dependent, usually microsecond precision
-3. **time_global** - Millisecond integer (fallback)
+The profiler uses **profile_timer** (X-Ray's native C++ timer) exclusively for microsecond-precision timing. This is the only timing method in the X-Ray engine with sufficient resolution for profiling - both `os.clock` and `time_global` lack the precision needed for sub-millisecond measurements.
+
+**Note:** If `profile_timer` is unavailable (rare), timing will be disabled and a warning logged.
 
 ### Module Exclusions
 
 DevTools modules (`devtools_*`) and system modules (Lua standard library, `os`, `io`, `debug`, etc.) are always excluded from profiling to prevent infinite recursion and stack overflow.
 
-### Recursion Protection
+### Stack Overflow Protection
 
-The profiler includes a recursion guard that prevents profiling functions from being profiled themselves. This prevents stack overflow when:
-- Wrapped functions call system functions that might be wrapped
-- Circular dependencies exist between modules
-- The profiler's own helper functions are accidentally wrapped
+The profiler includes multiple safeguards to prevent stack overflow:
 
-The recursion guard limits profiling depth to 1 level, ensuring the profiler's internal functions are never profiled.
+1. **Module Blacklist**: DevTools modules and Lua standard library are never wrapped
+2. **Function Blacklist**: System functions (`printf`, `time_global`, etc.) are excluded
+3. **Call Depth Limit**: Maximum 100 nested profiled calls (configurable via `MAX_CALL_DEPTH`)
+4. **Nested Call Support**: Each function call gets its own timer, supporting recursive and nested calls correctly
 
 ### Ring Buffer
 
