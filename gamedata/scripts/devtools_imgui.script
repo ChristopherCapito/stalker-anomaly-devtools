@@ -122,6 +122,12 @@ function render_module_browser()
     if ImGui.CollapsingHeader("Module Browser - Select modules to profile", 0) then
         module_browser_expanded = true
         
+        -- =============== WARNING DISCLAIMER ===============
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(1, 0.5, 0.2, 1))
+        ImGui.TextWrapped("WARNING: Selecting too many modules at once can cause stackoverflows. Use moderation when selecting modules.")
+        ImGui.PopStyleColor(1)
+        ImGui.Spacing()
+        
         -- =============== PRESETS SECTION ===============
         ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.9, 1, 1))
         ImGui.Text("Presets:")

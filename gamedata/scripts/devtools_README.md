@@ -226,6 +226,8 @@ devtools_imgui.is_visible()                        -- Check visibility
   - Green: Registered for profiling
   - Gray: Available but not selected
 
+**⚠️ WARNING**: Selecting too many modules at once can cause stackoverflows. Use moderation when selecting modules.
+
 #### Presets
 - Save current module selection with a name
 - Click preset name to load it
@@ -321,7 +323,16 @@ The profiler uses multiple timing methods in order of preference:
 
 ### Module Exclusions
 
-DevTools modules (`devtools_*`) are always excluded from profiling to prevent infinite recursion.
+DevTools modules (`devtools_*`) and system modules (Lua standard library, `os`, `io`, `debug`, etc.) are always excluded from profiling to prevent infinite recursion and stack overflow.
+
+### Recursion Protection
+
+The profiler includes a recursion guard that prevents profiling functions from being profiled themselves. This prevents stack overflow when:
+- Wrapped functions call system functions that might be wrapped
+- Circular dependencies exist between modules
+- The profiler's own helper functions are accidentally wrapped
+
+The recursion guard limits profiling depth to 1 level, ensuring the profiler's internal functions are never profiled.
 
 ### Ring Buffer
 

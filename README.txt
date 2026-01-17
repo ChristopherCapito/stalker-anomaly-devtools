@@ -25,6 +25,11 @@ FEATURES:
 - Category Browser: Visual category management with colors and quick toggles
 - Self-Contained UI: ImGui panel with profiler stats and log viewer
 
+WARNING:
+--------
+Selecting too many modules at once can cause stackoverflows. Use moderation
+when selecting modules to profile.
+
 USAGE:
 ------
 1. Start the game
