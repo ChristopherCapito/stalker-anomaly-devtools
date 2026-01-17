@@ -89,7 +89,7 @@ end
 -- INTERNAL STATE
 -- ============================================================================
 
-local timer_stacks = {}         -- Per-function timer stacks: timer_stacks[name] = {start1, start2, ...}
+local timer_stacks = {}         -- Per-function timer stacks for nested call handling
 local stats = {}                -- Statistics per function
 
 -- Module management
@@ -97,17 +97,12 @@ local registered_modules = {}   -- Modules registered for profiling: {name = tru
 local wrapped_modules = {}      -- Stores original functions per module
 local wrapped_function_count = 0
 
--- Recursion guard to prevent infinite loops
-local profiling_depth = 0       -- Current profiling depth
-local MAX_PROFILING_DEPTH = 1   -- Only allow one level (prevents profiling the profiler)
-
--- Call stack tracking for nested call handling
-local active_call_stack = {}  -- Stack of currently executing profiled functions
-local MAX_CALL_DEPTH = 100     -- Maximum call depth to prevent stack overflow
-local safety_stats = {         -- Safety statistics
-    skipped_calls = 0,
-    max_depth_reached = 0,
-    blacklist_violations = 0
+-- Call stack tracking for depth limiting
+local active_call_stack = {}    -- Stack of currently executing profiled functions
+local MAX_CALL_DEPTH = 100      -- Maximum call depth to prevent stack overflow
+local safety_stats = {          -- Safety statistics for debugging
+    skipped_depth = 0,          -- Calls skipped due to depth limit
+    blacklist_violations = 0    -- Runtime blacklist hits
 }
 
 -- ============================================================================
@@ -118,17 +113,6 @@ local safety_stats = {         -- Safety statistics
 
 -- Check if profile_timer is available (required for accurate timing)
 local PROFILE_TIMER_AVAILABLE = (profile_timer ~= nil)
-
--- Fallback timing (only used if profile_timer unavailable - not accurate!)
-local function get_time()
-    if time_global then
-        return time_global()
-    end
-    if os and os.clock then
-        return os.clock() * 1000
-    end
-    return 0
-end
 
 -- ============================================================================
 -- STATISTICS MANAGEMENT
@@ -154,34 +138,19 @@ end
 -- Start timing a named operation
 function start_timer(name)
     if not ENABLED then return end
-    
-    -- Check depth BEFORE incrementing
-    if profiling_depth >= MAX_PROFILING_DEPTH then
-        safety_stats.skipped_calls = safety_stats.skipped_calls + 1
-        return
-    end
-    
-    profiling_depth = profiling_depth + 1
+    if not PROFILE_TIMER_AVAILABLE then return end  -- Can't time without profile_timer
     
     -- Initialize stack for this function if needed
     if not timer_stacks[name] then
         timer_stacks[name] = {}
     end
     
-    -- Create a timer entry for this specific call
-    local timer_entry = {}
-    
-    -- Use profile_timer (the ONLY accurate timing method in X-Ray)
-    if PROFILE_TIMER_AVAILABLE then
-        timer_entry.pt = profile_timer()
-        timer_entry.pt:start()
-    else
-        -- Fallback (inaccurate - os.clock/time_global don't have enough precision)
-        timer_entry.start = get_time()
-    end
+    -- Create a new profile_timer for this specific call
+    local pt = profile_timer()
+    pt:start()
     
     -- Push onto the stack
-    table.insert(timer_stacks[name], timer_entry)
+    table.insert(timer_stacks[name], pt)
     
     if DEBUG_TIMING and stats[name] and stats[name].call_count < 5 then
         printf("[DEVTOOLS] start_timer(%s): stack_depth=%d", name, #timer_stacks[name])
@@ -191,30 +160,17 @@ end
 -- End timing and record the duration
 function end_timer(name)
     if not ENABLED then return 0 end
+    if not PROFILE_TIMER_AVAILABLE then return 0 end
     
-    -- Decrement depth (only if we actually started profiling)
-    if profiling_depth > 0 then
-        profiling_depth = profiling_depth - 1
-    end
-    
-    -- Pop timer entry from the stack
+    -- Pop profile_timer from the stack
     local stack = timer_stacks[name]
     if not stack or #stack == 0 then
         return 0
     end
     
-    local timer_entry = table.remove(stack)  -- Pop from end of stack
-    local duration_ms = 0
-    
-    -- Prefer profile_timer if we used it (most accurate)
-    if timer_entry.pt then
-        timer_entry.pt:stop()
-        duration_ms = timer_entry.pt:time() / 1000  -- Convert microseconds to ms
-    else
-        -- Fallback to wall-clock timing
-        local end_time = get_time()
-        duration_ms = end_time - timer_entry.start
-    end
+    local pt = table.remove(stack)  -- Pop from end of stack
+    pt:stop()
+    local duration_ms = pt:time() / 1000  -- Convert microseconds to ms
     
     if DEBUG_TIMING and (not stats[name] or stats[name].call_count < 5) then
         printf("[DEVTOOLS] end_timer(%s): duration=%f ms, stack_depth=%d", name, duration_ms, #stack)
@@ -239,14 +195,8 @@ function end_timer(name)
     return duration_ms
 end
 
--- Get elapsed time without stopping (uses top of stack)
-function get_elapsed(name)
-    if not ENABLED then return 0 end
-    local stack = timer_stacks[name]
-    if not stack or #stack == 0 then return 0 end
-    local timer_entry = stack[#stack]  -- Peek at top of stack
-    return get_time() - timer_entry.start
-end
+-- Note: get_elapsed() is not supported with profile_timer
+-- profile_timer only reports time after stop() is called
 
 -- ============================================================================
 -- STATISTICS API
@@ -303,21 +253,18 @@ function reset_all()
     timer_stacks = {}
 end
 
--- Get safety statistics (skipped calls, max depth, blacklist violations)
+-- Get safety statistics (for debugging/monitoring)
 function get_safety_stats()
     return {
-        skipped_calls = safety_stats.skipped_calls,
-        max_depth_reached = safety_stats.max_depth_reached,
+        skipped_depth = safety_stats.skipped_depth,
         blacklist_violations = safety_stats.blacklist_violations,
-        current_call_depth = #active_call_stack,
-        current_profiling_depth = profiling_depth
+        current_call_depth = #active_call_stack
     }
 end
 
 -- Reset safety statistics
 function reset_safety_stats()
-    safety_stats.skipped_calls = 0
-    safety_stats.max_depth_reached = 0
+    safety_stats.skipped_depth = 0
     safety_stats.blacklist_violations = 0
 end
 
@@ -465,9 +412,9 @@ local function wrap_function(module_name, func_name, original_func)
             return original_func(...)
         end
         
-        -- Check call depth
+        -- Check call depth to prevent stack overflow
         if #active_call_stack >= MAX_CALL_DEPTH then
-            safety_stats.max_depth_reached = math.max(safety_stats.max_depth_reached, #active_call_stack)
+            safety_stats.skipped_depth = safety_stats.skipped_depth + 1
             return original_func(...)
         end
         
