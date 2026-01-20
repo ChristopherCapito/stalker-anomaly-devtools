@@ -1,0 +1,105 @@
+<h1>Anomaly DevTools - Profiler & Logger v1.1.1</h1>
+
+<p><strong>A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-code performance profiling and structured logging for any mod.</strong></p>
+
+<p><strong>🎯 Perfect for Modders:</strong> Profile and debug ANY mod without modifying its source code. Works with all Anomaly mods out of the box.</p>
+
+<h2>Key Features</h2>
+<ul>
+    <li><strong>Zero-Code Profiling:</strong> Profile any Lua module without modifying its source code. Just select modules in the UI and start profiling.</li>
+    <li><strong>Live Statistics:</strong> View real-time function timing data including call counts, average/min/max/total execution times in milliseconds.</li>
+    <li><strong>Module Browser:</strong> Built-in UI to discover and select modules to profile from the global Lua namespace (<code>_G</code>).</li>
+    <li><strong>Profiling Presets:</strong> Save and load your profiling configurations for different debugging scenarios. Includes auto-start on game load.</li>
+    <li><strong>Structured Logging:</strong> Advanced logging system with severity levels (DEBUG, INFO, WARN, ERROR), custom categories, color coding, and filtering.</li>
+    <li><strong>CSV Export:</strong> Export profiling data to CSV for detailed analysis in Excel, Google Sheets, or other tools.</li>
+    <li><strong>Flamegraph Export:</strong> Export call stack data in collapsed stacks format (`.folded`) for visualization in external tools like FlameGraph.pl, Inferno, and speedscope.</li>
+    <li><strong>ImGui Interface:</strong> Self-contained, user-friendly UI panel for controlling the profiler and viewing logs in-game.</li>
+    <li><strong>Profile on Load:</strong> Automatically start profiling when the game loads or transitions between locations (optional).</li>
+</ul>
+
+<h2>What's New in v1.1.1</h2>
+<ul>
+    <li><strong>Improved:</strong> Flamegraph now groups callbacks by their specific name (e.g., <code>on_game_start</code>, <code>actor_on_update</code>) instead of just <code>make_callback</code></li>
+    <li><strong>New:</strong> <code>get_stats()</code> now shows a summary when called without arguments</li>
+    <li><strong>Fixed:</strong> Printf format string issues causing literal <code>%d</code>/<code>%s</code> output</li>
+    <li><strong>Fixed:</strong> Crash when calling <code>get_stats()</code> with nil argument</li>
+</ul>
+
+<h2>Installation</h2>
+
+<h3>Mod Organizer 2 (Recommended)</h3>
+<ol>
+    <li>Download the mod zip file</li>
+    <li>In MO2, click "Install Mod" button</li>
+    <li>Select the zip file</li>
+    <li>MO2 will extract it automatically</li>
+    <li>Enable the mod in your load order</li>
+</ol>
+
+<h3>Manual Installation</h3>
+<ol>
+    <li>Extract the zip file</li>
+    <li>Copy the contents of the <code>gamedata</code> folder to your Anomaly installation's <code>gamedata</code> folder</li>
+</ol>
+
+<h2>Usage</h2>
+<ol>
+    <li>Start the game</li>
+    <li>Open the ImGui menu (default: <strong>F1</strong> or <strong>Ins</strong>)</li>
+    <li>Navigate to the <strong>DevTools</strong> menu</li>
+    <li>Select <strong>Profiler</strong> or <strong>Logs</strong> to open the respective windows</li>
+</ol>
+
+<h3>Quick Start Guide</h3>
+<pre>1. Open DevTools → Profiler tab
+2. Expand "Module Browser"
+3. Check the modules you want to profile
+4. Click "Start Profiling"
+5. Watch the stats table populate with timing data</pre>
+
+<h3>Using Presets</h3>
+<ol>
+    <li>Select the modules you want to profile</li>
+    <li>In the "Presets" section, type a name</li>
+    <li>Click "Save"</li>
+    <li>Later, click a preset name to restore that selection</li>
+    <li>Enable "Profile on Load" to automatically start profiling when the game loads</li>
+</ol>
+
+<p><strong>⚠️ Warning:</strong> Selecting too many modules at once can cause stack overflows. Use moderation when selecting modules to profile. Start with a few modules and gradually add more if needed.</p>
+
+<h2>Files Included</h2>
+<ul>
+    <li><code>devtools_profiler.script</code> - Core profiling engine</li>
+    <li><code>devtools_config.script</code> - Configuration and presets storage</li>
+    <li><code>devtools_logging.script</code> - Structured logging system</li>
+    <li><code>devtools_imgui.script</code> - ImGui user interface</li>
+    <li><code>mod_script_devtools_early.ltx</code> - DLTX config for early script loading</li>
+    <li><code>devtools_README.md</code> - Detailed documentation (included in package)</li>
+</ul>
+
+<h2>Technical Details</h2>
+<ul>
+    <li><strong>Timer Precision:</strong> Uses X-Ray's native <code>profile_timer</code> for microsecond-precision timing</li>
+    <li><strong>Stack Overflow Protection:</strong> Multiple safeguards including module blacklists, function blacklists, and call depth limits</li>
+    <li><strong>Performance Impact:</strong> Adds ~1-5% overhead when profiling. Disable during normal gameplay.</li>
+    <li><strong>Configuration Storage:</strong> Presets are stored in <code>appdata/devtools_presets.txt</code></li>
+</ul>
+
+<h2>Tips</h2>
+<ul>
+    <li>Profile performance issues by registering your mod and enabling profiling to see which functions are slow</li>
+    <li>Use categories for different subsystems (AI, UI, Combat, etc.) to filter logs effectively</li>
+    <li>Save presets for different debugging scenarios (e.g., "AI_Debug", "Combat_Debug")</li>
+    <li>Use CSV export to compare performance across different game sessions</li>
+    <li>Export flamegraph data to visualize call stacks and identify performance bottlenecks</li>
+    <li>The Module Browser scans all of <code>_G</code> - you can profile ANY mod, even ones you didn't write</li>
+</ul>
+
+<h2>Advanced: Full Initialization Profiling</h2>
+<p>DevTools uses DLTX for early script loading, allowing it to capture the complete game initialization including 
+<code>start_game_callback</code> and <code>axr_main.on_game_start</code>. Just enable "Profile on Load" with your 
+desired modules (including <code>_g</code> and <code>axr_main</code>) and restart the game. No manual patches needed!</p>
+
+<p><strong>Author:</strong> CDEV<br>
+For detailed API documentation and examples, see <code>gamedata/scripts/devtools_README.md</code></p>

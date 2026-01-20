@@ -1,4 +1,4 @@
-# Deploy DevTools gamedata to Anomaly
+# Deploy gamedata to Anomaly
 # Usage: .\deploy.ps1
 
 $Source = "$PSScriptRoot\gamedata"

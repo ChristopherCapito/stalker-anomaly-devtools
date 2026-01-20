@@ -30,6 +30,13 @@ WARNING:
 Selecting too many modules at once can cause stackoverflows. Use moderation
 when selecting modules to profile.
 
+ADVANCED:
+---------
+DevTools uses DLTX for early script loading, allowing it to capture the
+complete game initialization including start_game_callback. Just enable
+"Profile on Load" with your desired modules and restart the game.
+See devtools_README.md for details.
+
 USAGE:
 ------
 1. Start the game
@@ -42,9 +49,10 @@ For detailed documentation, see: gamedata/scripts/devtools_README.md
 FILES INCLUDED:
 ---------------
 - devtools_profiler.script - Core profiling engine
-- devtools_logging.script - Structured logging system
 - devtools_config.script - Configuration and presets storage
+- devtools_logging.script - Structured logging system
 - devtools_imgui.script - ImGui user interface
+- mod_script_devtools_early.ltx - DLTX config for early script loading
 
 AUTHOR:
 -------
@@ -52,4 +60,4 @@ CDEV
 
 VERSION:
 --------
-1.0.0
+1.1.1

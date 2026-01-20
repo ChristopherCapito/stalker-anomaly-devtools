@@ -74,7 +74,7 @@ function register_category(name, color)
     color = color or {200, 200, 200, 255}
     
     registered_categories[name] = color
-    printf("[DEVTOOLS] Registered log category: %s", name)
+    printf("[DEVTOOLS] Registered log category: " .. tostring(name))
     return true
 end
 
@@ -356,7 +356,7 @@ function log(severity, category, message, data)
             category or "?",
             message or "")
         if printf then
-            printf("LOG: %s", console_msg)
+            printf("LOG: " .. tostring(console_msg))
         end
     end
     

@@ -43,6 +43,10 @@ local last_csv_export_path = nil
 local last_csv_export_time = 0
 local CSV_EXPORT_MESSAGE_DURATION = 5000  -- Show message for 5 seconds
 
+-- Flamegraph export state
+local last_flamegraph_export_path = nil
+local last_flamegraph_export_time = 0
+
 -- ============================================================================
 -- LOGGING TAB STATE
 -- ============================================================================
@@ -232,7 +236,10 @@ function render_module_browser()
             end
         end
         ImGui.SameLine()
-        if ImGui.Button("Select Filtered", vector2(100, 0)) then
+        
+        local select_btn_text = (module_search_text == "") and "Select All" or "Select Filtered"
+        
+        if ImGui.Button(select_btn_text, vector2(100, 0)) then
             for _, mod_name in ipairs(filtered_modules) do
                 if not devtools_profiler.is_module_registered(mod_name) then
                     devtools_profiler.register_module(mod_name)
@@ -362,13 +369,67 @@ function render_profiling_controls()
         if success then
             last_csv_export_path = path
             last_csv_export_time = time_global()
-            printf("[DEVTOOLS] CSV exported successfully to: %s", path)
+            printf("[DEVTOOLS] CSV exported successfully to: " .. tostring(path))
         else
             last_csv_export_path = nil
             last_csv_export_time = 0
         end
     end
+
+    ImGui.Spacing()
+    ImGui.Separator()
+    ImGui.Spacing()
+
+    ImGui.Text("Flamegraph Export:")
+    ImGui.SameLine()
+
+    local fg_enabled = devtools_profiler.is_flamegraph_enabled()
+    local _, new_fg_enabled = ImGui.Checkbox("Collect Data##flamegraph", fg_enabled)
+    if new_fg_enabled ~= fg_enabled then
+        if new_fg_enabled then
+            devtools_profiler.enable_flamegraph()
+        else
+            devtools_profiler.disable_flamegraph()
+        end
+    end
+
+    ImGui.SameLine()
+
+    if ImGui.Button("Export Flamegraph", vector2(130, 0)) then
+        local success, path = devtools_profiler.export_flamegraph()
+        if success then
+            last_flamegraph_export_path = path
+            last_flamegraph_export_time = time_global()
+            printf("[DEVTOOLS] Flamegraph exported successfully to: " .. tostring(path))
+        else
+            last_flamegraph_export_path = nil
+            last_flamegraph_export_time = 0
+        end
+    end
+
+    ImGui.Spacing()
     
+    -- Auto-start checkbox
+    local auto_start = devtools_profiler.preset_exists("_AUTOLOAD_")
+    local _, new_auto_start = ImGui.Checkbox("Profile on Load", auto_start)
+    
+    if new_auto_start ~= auto_start then
+        if new_auto_start then
+            -- Save current selection and flamegraph state as autoload preset
+            devtools_profiler.save_preset("_AUTOLOAD_")
+            local fg_state = devtools_profiler.is_flamegraph_enabled()
+            if fg_state then
+                printf("[DEVTOOLS] Auto-start ENABLED (saved current selection + flamegraph enabled)")
+            else
+                printf("[DEVTOOLS] Auto-start ENABLED (saved current selection)")
+            end
+        else
+            -- Delete autoload preset
+            devtools_profiler.delete_preset("_AUTOLOAD_")
+            printf("[DEVTOOLS] Auto-start DISABLED")
+        end
+    end
+
     ImGui.SameLine()
     
     local _, new_hide = ImGui.Checkbox("Hide fast (<0.01ms)", hide_fast_functions)
@@ -392,6 +453,26 @@ function render_profiling_controls()
         ImGui.SameLine()
         ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
         ImGui.TextWrapped(last_csv_export_path)
+        ImGui.PopStyleColor(1)
+    end
+
+    if last_flamegraph_export_path and (time_global() - last_flamegraph_export_time) < CSV_EXPORT_MESSAGE_DURATION then
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+        ImGui.Text("Flamegraph exported to:")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
+        ImGui.TextWrapped(last_flamegraph_export_path)
+        ImGui.PopStyleColor(1)
+    elseif last_flamegraph_export_path then
+        ImGui.Spacing()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        ImGui.Text("Last flamegraph export:")
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
+        ImGui.TextWrapped(last_flamegraph_export_path)
         ImGui.PopStyleColor(1)
     end
     if new_hide ~= hide_fast_functions then

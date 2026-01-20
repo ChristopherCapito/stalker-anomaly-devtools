@@ -21,9 +21,10 @@ Copy the following files to your `gamedata/scripts/` folder:
 | File | Purpose |
 |------|---------|
 | `devtools_profiler.script` | Core profiling engine |
-| `devtools_logging.script` | Structured logging system |
 | `devtools_config.script` | Configuration and presets storage |
+| `devtools_logging.script` | Structured logging system |
 | `devtools_imgui.script` | ImGui user interface |
+| `mod_script_devtools_early.ltx` | DLTX config for early script loading |
 
 Start the game - DevTools registers automatically.
 
@@ -109,15 +110,19 @@ devtools_profiler.is_module_registered(name)   -- Check if registered
 #### Profiling Control
 ```lua
 devtools_profiler.enable()                     -- Start profiling registered modules
-devtools_profiler.disable()                    -- Stop profiling, restore functions
+devtools_profiler.disable()                   -- Stop profiling immediately, restore functions
 devtools_profiler.is_enabled()                 -- Check if profiling active
 ```
+
+**Note:** `disable()` immediately stops all timing collection (including manual `start_timer`/`end_timer` calls) by setting the global `ENABLED` flag to `false`. This ensures that statistics stop updating the moment profiling is disabled, even if function wrappers are still active.
 
 #### Manual Timing
 ```lua
 devtools_profiler.start_timer(name)            -- Start timing an operation
 devtools_profiler.end_timer(name)              -- End timing, returns duration_ms
 ```
+
+**Note:** Manual timing calls respect the global profiling state. If profiling is disabled via `disable()`, `start_timer` and `end_timer` will return immediately without recording statistics. This ensures consistent behavior across all profiling methods.
 
 #### Statistics
 ```lua
@@ -133,6 +138,20 @@ devtools_profiler.reset_all()                  -- Reset all stats
 devtools_profiler.export_to_csv(filepath)       -- Export all stats to CSV (filepath optional)
 devtools_profiler.get_csv_export_path()        -- Get default CSV export path
 ```
+
+#### Flamegraph Export
+```lua
+devtools_profiler.enable_flamegraph()          -- Enable flamegraph data collection
+devtools_profiler.disable_flamegraph()         -- Disable flamegraph data collection
+devtools_profiler.is_flamegraph_enabled()      -- Check if flamegraph collection is enabled
+devtools_profiler.reset_flamegraph()           -- Clear captured flamegraph data
+devtools_profiler.export_flamegraph(filepath)  -- Export collapsed stacks format (filepath optional)
+devtools_profiler.get_flamegraph_export_path() -- Get default flamegraph export path
+```
+
+**Note:** Flamegraph exports use the standard "collapsed stacks" format:
+`root;module.func;child.func <space> time_us`. This works with external tools like
+FlameGraph.pl, inferno, or speedscope.
 
 #### Wrapped Module Info
 ```lua
@@ -313,6 +332,14 @@ The profiler uses **profile_timer** (X-Ray's native C++ timer) exclusively for m
 
 **Note:** If `profile_timer` is unavailable (rare), timing will be disabled and a warning logged.
 
+### Master Switch Behavior
+
+The profiler uses a global `ENABLED` flag as a master switch that controls all timing collection:
+- When `enable()` is called, `ENABLED` is set to `true`, allowing timing to be recorded
+- When `disable()` is called, `ENABLED` is immediately set to `false` at the start of the function, ensuring all timing stops instantly
+- Both automatic function wrapping and manual `start_timer`/`end_timer` calls respect this flag
+- This design ensures that clicking "Stop Profiling" immediately halts all statistics updates, even if function wrappers are still active in memory
+
 ### Module Exclusions
 
 DevTools modules (`devtools_*`) and system modules (Lua standard library, `os`, `io`, `debug`, etc.) are always excluded from profiling to prevent infinite recursion and stack overflow.
@@ -336,6 +363,32 @@ Presets are stored in `appdata/devtools_presets.txt`.
 
 ---
 
+## Advanced: Capturing Game Initialization
+
+DevTools uses DLTX to force early script loading, which allows it to capture the complete game initialization sequence including `_g.start_game_callback` and `axr_main.on_game_start`.
+
+**How it works:**
+- The file `gamedata/configs/mod_script_devtools_early.ltx` uses DLTX to add DevTools scripts to the early load list
+- This causes the profiler to load BEFORE `start_game_callback` is called
+- At root level, the profiler checks for the `_AUTOLOAD_` preset and wraps modules immediately
+- When `start_game_callback` runs, `_g` and `axr_main` are already wrapped!
+
+**To capture full initialization:**
+1. Select the modules you want to profile (including `_g` and `axr_main`)
+2. Enable "Collect Data" for flamegraph if desired
+3. Enable "Profile on Load" to save the `_AUTOLOAD_` preset
+4. **Restart the game completely** (not just reload a save)
+5. The profiler will wrap modules before `start_game_callback` runs
+
+**What gets captured:**
+- `_g.start_game_callback` and everything inside it
+- `axr_main.on_game_start` and all module `on_game_start` callbacks
+- All runtime callbacks (`actor_on_update`, `npc_on_update`, etc.)
+
+**Note:** This requires DLTX support (included in Anomaly 1.5.1+). The early loading happens automatically - no manual patches needed!
+
+---
+
 ## Tips
 
 1. **Profile Performance Issues**: If your mod causes stutters, register it and enable profiling to see which functions are slow.
@@ -354,8 +407,7 @@ Presets are stored in `appdata/devtools_presets.txt`.
 
 8. **CSV Export**: Use the "Export CSV" button to save profiling data for detailed analysis in Excel, Google Sheets, or other tools. Great for comparing performance across different game sessions.
 
+9. **Flamegraph Export**: Enable flamegraph collection, run a profiling session, then export a `.folded` file for external tools like FlameGraph.pl, inferno, or speedscope.
+
 ---
 
-## License
-
-Free to use and modify. Attribution appreciated but not required.

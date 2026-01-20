@@ -96,7 +96,7 @@ function load_presets()
             local success, loaded = pcall(loader)
             if success and type(loaded) == "table" then
                 presets = loaded
-                printf("[DEVTOOLS] Presets loaded from: %s", path)
+                printf("[DEVTOOLS] Presets loaded from: " .. tostring(path))
                 return true
             end
         end
@@ -111,7 +111,7 @@ function save_presets()
     local path = get_presets_path()
     local file = io.open(path, "w")
     if not file then
-        printf("[DEVTOOLS] Failed to save presets to: %s", path)
+        printf("[DEVTOOLS] Failed to save presets to: " .. tostring(path))
         return false
     end
     
@@ -120,21 +120,46 @@ function save_presets()
     file:write("return " .. serialize_value(presets))
     file:close()
     
-    printf("[DEVTOOLS] Presets saved to: %s", path)
+    printf("[DEVTOOLS] Presets saved to: " .. tostring(path))
     return true
 end
 
 -- Save current selection as a preset
-function save_preset(name, modules)
+-- modules can be either:
+--   - Array of module names (old format, backward compatible)
+--   - Table with {modules = {...}, flamegraph_enabled = bool} (new format)
+function save_preset(name, modules, flamegraph_enabled)
     if not name or name == "" then return false end
-    presets[name] = modules
+    
+    -- If modules is already a table with modules key, use it as-is
+    -- Otherwise, create new format table
+    if type(modules) == "table" and modules.modules then
+        presets[name] = modules
+    else
+        -- New format: store as table with modules and optional flamegraph_enabled
+        presets[name] = {
+            modules = modules,
+            flamegraph_enabled = flamegraph_enabled or false
+        }
+    end
     save_presets()
     return true
 end
 
--- Load a preset (returns list of module names)
+-- Load a preset (returns list of module names or table with modules and flamegraph_enabled)
+-- For backward compatibility: if preset is just an array, return it as-is
+-- If preset is a table with modules key, return the full table
 function load_preset(name)
-    return presets[name]
+    local preset = presets[name]
+    if not preset then return nil end
+    
+    -- Backward compatibility: if it's an array (old format), return as-is
+    if type(preset) == "table" and #preset > 0 and preset[1] and type(preset[1]) == "string" then
+        return preset
+    end
+    
+    -- New format: return the table (has modules and flamegraph_enabled)
+    return preset
 end
 
 -- Delete a preset
@@ -171,6 +196,20 @@ end
 -- INITIALIZATION
 -- ============================================================================
 
+-- ROOT-LEVEL: Load presets immediately when script loads
+-- This allows devtools_profiler to access presets at root level
+do
+    local success = pcall(function()
+        load_presets()
+    end)
+    if success then
+        printf("[DEVTOOLS CONFIG] Presets loaded at root level")
+    else
+        printf("[DEVTOOLS CONFIG] Failed to load presets at root level (will retry in on_game_start)")
+    end
+end
+
 function on_game_start()
+    -- Reload presets in case root-level loading failed
     load_presets()
 end
