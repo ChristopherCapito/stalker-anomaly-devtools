@@ -5,6 +5,24 @@ All notable changes to Anomaly DevTools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-01-21
+
+### Added
+- **Timed Profiling**: New "Timed" checkbox with duration input allows automatic profiling stop after a specified time (1-300 seconds). Perfect for consistent benchmark recordings.
+- **Minimal Mode**: New toggle to hide the stats table entirely during profiling. Provides maximum FPS (~50 vs ~22) while collecting data for flamegraph export.
+- **Row Limiting**: New display controls with row limit buttons (All/50/100/200). Default 100 rows provides excellent performance (~40 FPS vs ~22 FPS with all rows).
+- **Column Visibility Toggle**: "Show all columns" checkbox to optionally display the Min (ms) column.
+
+### Changed
+- **Major Performance Improvements**: Stats table now caches data and only rebuilds every 150ms instead of every frame. Pre-computed colors avoid repeated fcolor() allocations. Result: **2x FPS improvement** when profiling many modules.
+- **Cleaner UI**: Simplified "Display" controls section. Removed color toggles and refresh rate buttons (testing showed negligible impact).
+- **Flamegraph Button UX**: Export Flamegraph button is now disabled (grayed out) when no flamegraph data has been collected.
+
+### Removed
+- Color toggle checkboxes (colors always on - negligible performance impact per testing)
+- Refresh rate buttons (fixed at optimal 150ms - negligible impact per testing)
+- Unused code: `COLOR_DARK_GRAY`, `COLOR_LIGHT_GRAY` constants, `module_browser_expanded` variable
+
 ## [1.1.1] - 2026-01-20
 
 ### Added

@@ -26,13 +26,26 @@ local show_logs_window = false
 local hide_fast_functions = false
 local sort_column = 3           -- Default: Avg (ms)
 local sort_ascending = false    -- Descending (slowest first)
+local max_visible_rows = 100    -- Limits rows shown for performance (0 = unlimited)
+local show_all_columns = false  -- Show Min column (false = 5 columns, true = 6 columns)
+local minimal_mode = false      -- Hide stats table entirely (for flamegraph collection)
 
 -- Module browser state
 local available_modules = {}
-local module_browser_expanded = false
 local last_module_scan = 0
 local MODULE_SCAN_INTERVAL = 5000  -- Rescan every 5 seconds
 local module_search_text = ""      -- Search filter for module browser
+
+-- Stats cache for performance (throttles table rebuilding)
+local cached_stats_display = {}
+local cached_total_time = 0
+local cached_total_calls = 0
+local cached_total_names = 0
+local last_stats_update = 0
+local STATS_UPDATE_INTERVAL = 150  -- Update every 150ms (roughly 6-7 FPS for stats)
+local cached_sort_column = 3
+local cached_sort_ascending = false
+local cached_hide_fast = false
 
 -- Presets state
 local preset_name_input = ""
@@ -46,6 +59,53 @@ local CSV_EXPORT_MESSAGE_DURATION = 5000  -- Show message for 5 seconds
 -- Flamegraph export state
 local last_flamegraph_export_path = nil
 local last_flamegraph_export_time = 0
+
+-- Timed profiling state
+local timed_profiling_enabled = false
+local profiling_duration_sec = 10  -- Default 10 seconds
+local profiling_duration_text = "10"  -- Text input buffer
+local profiling_start_time = 0
+
+-- ============================================================================
+-- PRE-COMPUTED COLORS (performance optimization - avoids fcolor() allocations)
+-- ============================================================================
+
+-- Timing colors (for Avg/Max columns)
+local TIMING_COLOR_GREEN = fcolor():set(0.4, 1, 0.4, 1)
+local TIMING_COLOR_YELLOW = fcolor():set(1, 1, 0.4, 1)
+local TIMING_COLOR_ORANGE = fcolor():set(1, 0.7, 0.3, 1)
+local TIMING_COLOR_RED = fcolor():set(1, 0.4, 0.4, 1)
+
+-- Module palette colors
+local MODULE_PALETTE = {
+    fcolor():set(0.5, 0.8, 1, 1),    -- Light blue
+    fcolor():set(1, 0.8, 0.5, 1),    -- Orange
+    fcolor():set(0.5, 1, 0.5, 1),    -- Green
+    fcolor():set(1, 0.5, 0.8, 1),    -- Pink
+    fcolor():set(0.8, 0.8, 0.5, 1),  -- Yellow
+    fcolor():set(0.8, 0.5, 1, 1),    -- Purple
+    fcolor():set(0.5, 1, 0.8, 1),    -- Cyan
+    fcolor():set(1, 0.6, 0.6, 1)     -- Salmon
+}
+
+-- Default/utility colors
+local COLOR_WHITE = fcolor():set(1, 1, 1, 1)
+local COLOR_GRAY = fcolor():set(0.5, 0.5, 0.5, 1)
+
+-- ============================================================================
+-- FORMAT HELPERS
+-- ============================================================================
+
+-- Compact number formatting (reduces string allocations)
+local function format_compact(ms)
+    if ms >= 100 then
+        return string.format("%.0f", ms)
+    elseif ms >= 10 then
+        return string.format("%.1f", ms)
+    else
+        return string.format("%.2f", ms)
+    end
+end
 
 -- ============================================================================
 -- LOGGING TAB STATE
@@ -124,8 +184,6 @@ function render_module_browser()
     
     -- Collapsible module browser
     if ImGui.CollapsingHeader("Module Browser - Select modules to profile", 0) then
-        module_browser_expanded = true
-        
         -- =============== WARNING DISCLAIMER ===============
         ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(1, 0.5, 0.2, 1))
         ImGui.TextWrapped("WARNING: Selecting too many modules at once can cause stackoverflows. Use moderation when selecting modules.")
@@ -304,8 +362,6 @@ function render_module_browser()
         ImGui.PopStyleColor(1)
         ImGui.SameLine()
         ImGui.Text("Available")
-    else
-        module_browser_expanded = false
     end
 end
 
@@ -336,6 +392,17 @@ function render_profiling_controls()
     if is_enabled then
         if ImGui.Button("Stop Profiling", vector2(120, 0)) then
             devtools_profiler.disable()
+            timed_profiling_enabled = false
+        end
+        
+        -- Show timer countdown if timed profiling is active
+        if timed_profiling_enabled then
+            ImGui.SameLine()
+            local elapsed = (time_global() - profiling_start_time) / 1000
+            local remaining = math.max(0, profiling_duration_sec - elapsed)
+            ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(1, 0.8, 0.3, 1))
+            ImGui.Text(string.format("Auto-stop in %.1fs", remaining))
+            ImGui.PopStyleColor(1)
         end
     else
         local can_start = #registered > 0
@@ -345,6 +412,11 @@ function render_profiling_controls()
         if ImGui.Button("Start Profiling", vector2(120, 0)) then
             if can_start then
                 devtools_profiler.enable()
+                -- Start timer if timed mode is enabled
+                if timed_profiling_enabled then
+                    profiling_start_time = time_global()
+                    printf("[DEVTOOLS] Timed profiling started - will stop in " .. tostring(profiling_duration_sec) .. "s")
+                end
             end
         end
         if not can_start then
@@ -353,6 +425,26 @@ function render_profiling_controls()
             ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(1, 0.5, 0.5, 1))
             ImGui.Text("Select modules above first")
             ImGui.PopStyleColor(1)
+        end
+        
+        -- Timed profiling controls (only show when profiler is stopped)
+        ImGui.SameLine(0, 20)
+        local _, new_timed = ImGui.Checkbox("Timed##timed_profiling", timed_profiling_enabled)
+        if new_timed ~= timed_profiling_enabled then
+            timed_profiling_enabled = new_timed
+        end
+        
+        if timed_profiling_enabled then
+            ImGui.SameLine()
+            local new_text, text_changed = ImGui.InputText("sec##duration", profiling_duration_text, 5)
+            if text_changed then
+                profiling_duration_text = new_text
+                -- Parse and sanitize to number
+                local num = tonumber(new_text)
+                if num then
+                    profiling_duration_sec = math.max(1, math.min(300, math.floor(num)))
+                end
+            end
         end
     end
     
@@ -395,16 +487,34 @@ function render_profiling_controls()
 
     ImGui.SameLine()
 
+    -- Disable flamegraph export button when no data available
+    local has_flamegraph_data = devtools_profiler.get_flamegraph_sample_count() > 0
+    local can_export_flamegraph = fg_enabled or has_flamegraph_data
+    
+    if not can_export_flamegraph then
+        ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.3, 0.3, 0.3, 1))
+    end
+
     if ImGui.Button("Export Flamegraph", vector2(130, 0)) then
-        local success, path = devtools_profiler.export_flamegraph()
-        if success then
-            last_flamegraph_export_path = path
-            last_flamegraph_export_time = time_global()
-            printf("[DEVTOOLS] Flamegraph exported successfully to: " .. tostring(path))
-        else
-            last_flamegraph_export_path = nil
-            last_flamegraph_export_time = 0
+        if can_export_flamegraph then
+            local success, path = devtools_profiler.export_flamegraph()
+            if success then
+                last_flamegraph_export_path = path
+                last_flamegraph_export_time = time_global()
+                printf("[DEVTOOLS] Flamegraph exported successfully to: " .. tostring(path))
+            else
+                last_flamegraph_export_path = nil
+                last_flamegraph_export_time = 0
+            end
         end
+    end
+    
+    if not can_export_flamegraph then
+        ImGui.PopStyleColor(1)
+        ImGui.SameLine()
+        ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+        ImGui.Text("(enable collection first)")
+        ImGui.PopStyleColor(1)
     end
 
     ImGui.Spacing()
@@ -433,6 +543,43 @@ function render_profiling_controls()
     ImGui.SameLine()
     
     local _, new_hide = ImGui.Checkbox("Hide fast (<0.01ms)", hide_fast_functions)
+    
+    -- Performance controls
+    ImGui.Spacing()
+    ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
+    ImGui.Text("Display:")
+    ImGui.PopStyleColor(1)
+    ImGui.SameLine()
+    
+    -- Row limit control
+    ImGui.Text("Max rows:")
+    ImGui.SameLine()
+    if ImGui.Button("All##rows", vector2(30, 0)) then
+        max_visible_rows = 0
+    end
+    ImGui.SameLine(0, 2)
+    if ImGui.Button("50##rows", vector2(25, 0)) then
+        max_visible_rows = 50
+    end
+    ImGui.SameLine(0, 2)
+    if ImGui.Button("100##rows", vector2(30, 0)) then
+        max_visible_rows = 100
+    end
+    ImGui.SameLine(0, 2)
+    if ImGui.Button("200##rows", vector2(30, 0)) then
+        max_visible_rows = 200
+    end
+    
+    ImGui.SameLine(0, 15)
+    local _, new_minimal = ImGui.Checkbox("Minimal mode", minimal_mode)
+    if new_minimal ~= minimal_mode then
+        minimal_mode = new_minimal
+    end
+    ImGui.SameLine()
+    local _, new_all_cols = ImGui.Checkbox("Show all columns", show_all_columns)
+    if new_all_cols ~= show_all_columns then
+        show_all_columns = new_all_cols
+    end
     
     -- Show CSV export path if recently exported
     if last_csv_export_path and (time_global() - last_csv_export_time) < CSV_EXPORT_MESSAGE_DURATION then
@@ -494,7 +641,6 @@ function render_profiling_controls()
 end
 
 function render_stats_table()
-    local all_stats = devtools_profiler.get_all_stats()
     local names = devtools_profiler.get_tracked_functions()
     
     if #names == 0 then
@@ -503,57 +649,108 @@ function render_stats_table()
         return
     end
     
-    -- Build filtered list
-    local display_list = {}
-    local total_time = 0
-    local total_calls = 0
+    -- Throttle stats rebuilding for performance
+    local tg = time_global()
+    local display_list
+    local total_time
+    local total_calls
     
-    for _, name in ipairs(names) do
-        local s = all_stats[name]
-        if s then
-            local include = true
-            if hide_fast_functions and s.avg_ms < 0.01 then
-                include = false
-            end
-            if include then
-                table.insert(display_list, {name = name, stats = s})
-                total_time = total_time + s.total_ms
-                total_calls = total_calls + s.call_count
+    -- Force refresh if sort/filter settings changed
+    local settings_changed = (sort_column ~= cached_sort_column) or 
+                             (sort_ascending ~= cached_sort_ascending) or 
+                             (hide_fast_functions ~= cached_hide_fast)
+    
+    if settings_changed or (tg - last_stats_update > STATS_UPDATE_INTERVAL) then
+        -- Rebuild stats (expensive operation)
+        local all_stats = devtools_profiler.get_all_stats()
+        display_list = {}
+        total_time = 0
+        total_calls = 0
+        
+        for _, name in ipairs(names) do
+            local s = all_stats[name]
+            if s then
+                local include = true
+                if hide_fast_functions and s.avg_ms < 0.01 then
+                    include = false
+                end
+                if include then
+                    table.insert(display_list, {name = name, stats = s})
+                    total_time = total_time + s.total_ms
+                    total_calls = total_calls + s.call_count
+                end
             end
         end
+        
+        -- Sort
+        table.sort(display_list, function(a, b)
+            local val_a, val_b
+            if sort_column == 1 then val_a, val_b = a.name, b.name
+            elseif sort_column == 2 then val_a, val_b = a.stats.call_count, b.stats.call_count
+            elseif sort_column == 3 then val_a, val_b = a.stats.avg_ms, b.stats.avg_ms
+            elseif sort_column == 4 then val_a, val_b = a.stats.min_ms, b.stats.min_ms
+            elseif sort_column == 5 then val_a, val_b = a.stats.max_ms, b.stats.max_ms
+            elseif sort_column == 6 then val_a, val_b = a.stats.total_ms, b.stats.total_ms
+            else val_a, val_b = a.stats.avg_ms, b.stats.avg_ms end
+            
+            if sort_ascending then return val_a < val_b else return val_a > val_b end
+        end)
+        
+        -- Cache results
+        cached_stats_display = display_list
+        cached_total_time = total_time
+        cached_total_calls = total_calls
+        cached_total_names = #names
+        cached_sort_column = sort_column
+        cached_sort_ascending = sort_ascending
+        cached_hide_fast = hide_fast_functions
+        last_stats_update = tg
+    else
+        -- Use cached data
+        display_list = cached_stats_display
+        total_time = cached_total_time
+        total_calls = cached_total_calls
     end
     
-    -- Sort
-    table.sort(display_list, function(a, b)
-        local val_a, val_b
-        if sort_column == 1 then val_a, val_b = a.name, b.name
-        elseif sort_column == 2 then val_a, val_b = a.stats.call_count, b.stats.call_count
-        elseif sort_column == 3 then val_a, val_b = a.stats.avg_ms, b.stats.avg_ms
-        elseif sort_column == 4 then val_a, val_b = a.stats.min_ms, b.stats.min_ms
-        elseif sort_column == 5 then val_a, val_b = a.stats.max_ms, b.stats.max_ms
-        elseif sort_column == 6 then val_a, val_b = a.stats.total_ms, b.stats.total_ms
-        else val_a, val_b = a.stats.avg_ms, b.stats.avg_ms end
-        
-        if sort_ascending then return val_a < val_b else return val_a > val_b end
-    end)
+    -- Apply row limit for rendering
+    local render_count = #display_list
+    if max_visible_rows > 0 and render_count > max_visible_rows then
+        render_count = max_visible_rows
+    end
     
     -- Summary
-    ImGui.Text(string.format("Showing %d/%d functions | Total: %.1fms across %d calls",
-        #display_list, #names, total_time, total_calls))
+    local limit_text = ""
+    if max_visible_rows > 0 and #display_list > max_visible_rows then
+        limit_text = string.format(" (showing top %d)", max_visible_rows)
+    end
+    ImGui.Text(string.format("Showing %d/%d functions%s | Total: %.1fms across %d calls",
+        #display_list, cached_total_names, limit_text, total_time, total_calls))
     ImGui.Spacing()
     
-    -- Column definitions
+    -- Minimal mode: skip table rendering entirely
+    if minimal_mode then
+        ImGui.PushStyleColor(ImGuiCol.Text, COLOR_GRAY)
+        ImGui.Text("(Minimal mode - table hidden for performance)")
+        ImGui.PopStyleColor(1)
+        return
+    end
+    
+    -- Column definitions (conditionally include Min column)
     local columns = {
-        {name = "Function", width = 260},
-        {name = "Calls", width = 55},
-        {name = "Avg (ms)", width = 65},
-        {name = "Min (ms)", width = 65},
-        {name = "Max (ms)", width = 65},
-        {name = "Total (ms)", width = 75}
+        {name = "Function", width = 260, sort_idx = 1},
+        {name = "Calls", width = 55, sort_idx = 2},
+        {name = "Avg (ms)", width = 65, sort_idx = 3},
     }
+    if show_all_columns then
+        table.insert(columns, {name = "Min (ms)", width = 65, sort_idx = 4})
+    end
+    table.insert(columns, {name = "Max (ms)", width = 65, sort_idx = 5})
+    table.insert(columns, {name = "Total (ms)", width = 75, sort_idx = 6})
+    
+    local col_count = #columns
     
     -- Table
-    if ImGui.BeginTable("DevToolsStats", 6, 4, vector2(0, 0), 0) then
+    if ImGui.BeginTable("DevToolsStats", col_count, 4, vector2(0, 0), 0) then
         for _, col in ipairs(columns) do
             ImGui.TableSetupColumn(col.name, 0, col.width, 0)
         end
@@ -563,27 +760,30 @@ function render_stats_table()
         for i, col in ipairs(columns) do
             ImGui.TableNextColumn()
             local label = col.name
-            if sort_column == i then
+            local sort_idx = col.sort_idx
+            if sort_column == sort_idx then
                 label = label .. (sort_ascending and " ^" or " v")
             end
-            if sort_column == i then
+            if sort_column == sort_idx then
                 ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.3, 0.5, 0.8, 1))
             end
             if ImGui.Button(label .. "##col" .. i, vector2(col.width - 8, 0)) then
-                if sort_column == i then
+                if sort_column == sort_idx then
                     sort_ascending = not sort_ascending
                 else
-                    sort_column = i
-                    sort_ascending = (i == 1)
+                    sort_column = sort_idx
+                    sort_ascending = (sort_idx == 1)
                 end
             end
-            if sort_column == i then
+            if sort_column == sort_idx then
                 ImGui.PopStyleColor(1)
             end
         end
         
-        -- Data rows
-        for _, item in ipairs(display_list) do
+        -- Data rows (limited by max_visible_rows for performance)
+        for i = 1, render_count do
+            local item = display_list[i]
+            if not item then break end
             local s = item.stats
             ImGui.TableNextRow()
             
@@ -597,25 +797,27 @@ function render_stats_table()
             ImGui.TableNextColumn()
             ImGui.Text(tostring(s.call_count))
             
-            -- Avg (colored)
+            -- Avg (colored by timing)
             ImGui.TableNextColumn()
             ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.avg_ms))
-            ImGui.Text(string.format("%.3f", s.avg_ms))
+            ImGui.Text(format_compact(s.avg_ms))
             ImGui.PopStyleColor(1)
             
-            -- Min
-            ImGui.TableNextColumn()
-            ImGui.Text(string.format("%.3f", s.min_ms))
+            -- Min (only if showing all columns)
+            if show_all_columns then
+                ImGui.TableNextColumn()
+                ImGui.Text(format_compact(s.min_ms))
+            end
             
-            -- Max (colored)
+            -- Max (colored by timing)
             ImGui.TableNextColumn()
             ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.max_ms))
-            ImGui.Text(string.format("%.2f", s.max_ms))
+            ImGui.Text(format_compact(s.max_ms))
             ImGui.PopStyleColor(1)
             
             -- Total
             ImGui.TableNextColumn()
-            ImGui.Text(string.format("%.1f", s.total_ms))
+            ImGui.Text(format_compact(s.total_ms))
         end
         
         ImGui.EndTable()
@@ -982,7 +1184,7 @@ local color_index = 0
 function get_module_color(func_name)
     local module_name = func_name:match("^([^%.]+)%.")
     if not module_name then
-        return fcolor():set(1, 1, 1, 1)
+        return COLOR_WHITE
     end
     
     if not module_colors[module_name] then
@@ -994,28 +1196,18 @@ function get_module_color(func_name)
 end
 
 function get_module_color_by_index(index)
-    local palette = {
-        fcolor():set(0.5, 0.8, 1, 1),    -- Light blue
-        fcolor():set(1, 0.8, 0.5, 1),    -- Orange
-        fcolor():set(0.5, 1, 0.5, 1),    -- Green
-        fcolor():set(1, 0.5, 0.8, 1),    -- Pink
-        fcolor():set(0.8, 0.8, 0.5, 1),  -- Yellow
-        fcolor():set(0.8, 0.5, 1, 1),    -- Purple
-        fcolor():set(0.5, 1, 0.8, 1),    -- Cyan
-        fcolor():set(1, 0.6, 0.6, 1)     -- Salmon
-    }
-    return palette[((index - 1) % #palette) + 1]
+    return MODULE_PALETTE[((index - 1) % #MODULE_PALETTE) + 1]
 end
 
 function get_timing_color(ms)
     if ms < 1 then
-        return fcolor():set(0.4, 1, 0.4, 1)    -- Green
+        return TIMING_COLOR_GREEN
     elseif ms < 5 then
-        return fcolor():set(1, 1, 0.4, 1)      -- Yellow
+        return TIMING_COLOR_YELLOW
     elseif ms < 20 then
-        return fcolor():set(1, 0.7, 0.3, 1)    -- Orange
+        return TIMING_COLOR_ORANGE
     else
-        return fcolor():set(1, 0.4, 0.4, 1)    -- Red
+        return TIMING_COLOR_RED
     end
 end
 
@@ -1137,4 +1329,25 @@ end
 -- Register keybind
 if RegisterScriptCallback then
     RegisterScriptCallback("on_key_press", on_key_press)
+end
+
+-- ============================================================================
+-- TIMED PROFILING AUTO-STOP
+-- ============================================================================
+
+function on_actor_update()
+    -- Check if timed profiling should auto-stop
+    if timed_profiling_enabled and devtools_profiler and devtools_profiler.is_enabled() then
+        local elapsed = (time_global() - profiling_start_time) / 1000
+        if elapsed >= profiling_duration_sec then
+            devtools_profiler.disable()
+            timed_profiling_enabled = false
+            printf("[DEVTOOLS] Timed profiling auto-stopped after " .. tostring(profiling_duration_sec) .. "s")
+        end
+    end
+end
+
+-- Register actor update callback for timed profiling
+if RegisterScriptCallback then
+    RegisterScriptCallback("actor_on_update", on_actor_update)
 end

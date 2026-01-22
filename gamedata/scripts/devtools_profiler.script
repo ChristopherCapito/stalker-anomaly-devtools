@@ -956,6 +956,10 @@ function is_flamegraph_enabled()
 	return flamegraph_enabled
 end
 
+function get_flamegraph_sample_count()
+	return flamegraph_total_samples
+end
+
 function reset_flamegraph()
 	flamegraph_samples = {}
 	flamegraph_total_samples = 0

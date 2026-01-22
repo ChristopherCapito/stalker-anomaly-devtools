@@ -1,4 +1,4 @@
-<h1>Anomaly DevTools - Profiler & Logger v1.1.1</h1>
+<h1>Anomaly DevTools - Profiler & Logger v1.1.2</h1>
 
 <p><strong>A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-code performance profiling and structured logging for any mod.</strong></p>
 
@@ -17,12 +17,14 @@
     <li><strong>Profile on Load:</strong> Automatically start profiling when the game loads or transitions between locations (optional).</li>
 </ul>
 
-<h2>What's New in v1.1.1</h2>
+<h2>What's New in v1.1.2</h2>
 <ul>
-    <li><strong>Improved:</strong> Flamegraph now groups callbacks by their specific name (e.g., <code>on_game_start</code>, <code>actor_on_update</code>) instead of just <code>make_callback</code></li>
-    <li><strong>New:</strong> <code>get_stats()</code> now shows a summary when called without arguments</li>
-    <li><strong>Fixed:</strong> Printf format string issues causing literal <code>%d</code>/<code>%s</code> output</li>
-    <li><strong>Fixed:</strong> Crash when calling <code>get_stats()</code> with nil argument</li>
+    <li><strong>⚡ Major Performance:</strong> 2x FPS improvement when profiling! Stats caching, pre-computed colors, and row limiting (~40 FPS vs ~22 FPS)</li>
+    <li><strong>New:</strong> Timed Profiling - auto-stop after specified duration (1-300 seconds)</li>
+    <li><strong>New:</strong> Minimal Mode - hide stats table for maximum FPS during flamegraph collection (~50 FPS)</li>
+    <li><strong>New:</strong> Row limiting controls (All/50/100/200) - default 100 rows for optimal performance</li>
+    <li><strong>Improved:</strong> Flamegraph export button disabled when no data collected</li>
+    <li><strong>Improved:</strong> Cleaner UI with simplified Display controls</li>
 </ul>
 
 <h2>Installation</h2>

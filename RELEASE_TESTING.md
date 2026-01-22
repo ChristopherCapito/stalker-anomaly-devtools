@@ -1,4 +1,4 @@
-# Anomaly DevTools - Release Testing Guide
+# Anomaly DevTools - Release Testing Guide (v1.1.2)
 
 This document provides a complete checklist of tests to perform before each release to prevent regressions.
 
@@ -103,27 +103,71 @@ This document provides a complete checklist of tests to perform before each rele
 - [ ] Verify stats reset and begin collecting fresh data
 - [ ] No crashes or duplicate entries
 
+### 4.4 Timed Profiling
+- [ ] Check "Timed" checkbox next to Start button
+- [ ] Enter duration (e.g., "5" seconds)
+- [ ] Click "Start Profiling"
+- [ ] Verify countdown timer shows "Auto-stop in X.Xs"
+- [ ] Wait for timer to expire
+- [ ] Verify profiling stops automatically
+- [ ] Verify console shows "[DEVTOOLS] Timed profiling auto-stopped after 5s"
+
+### 4.5 Timed Profiling - Manual Stop
+- [ ] Enable timed profiling with 30 seconds
+- [ ] Start profiling
+- [ ] Click "Stop Profiling" before timer expires
+- [ ] Verify profiling stops immediately
+- [ ] Verify timed mode checkbox is unchecked
+
 ---
 
-## 5. Preset Tests
+## 5. Display Controls Tests
 
-### 5.1 Save Preset
+### 5.1 Row Limiting
+- [ ] Select ALL modules and start profiling
+- [ ] Wait for stats to populate (100+ functions)
+- [ ] Click "50" button → Verify only 50 rows shown
+- [ ] Click "100" button → Verify only 100 rows shown
+- [ ] Click "200" button → Verify only 200 rows shown
+- [ ] Click "All" button → Verify all rows shown
+- [ ] Summary text shows "(showing top X)" when limited
+
+### 5.2 Minimal Mode
+- [ ] Start profiling with multiple modules
+- [ ] Check "Minimal mode" checkbox
+- [ ] Verify stats table is hidden
+- [ ] Verify "(Minimal mode - table hidden for performance)" message appears
+- [ ] Verify FPS is noticeably higher (~50 vs ~22)
+- [ ] Uncheck "Minimal mode" → Table returns
+
+### 5.3 Column Visibility
+- [ ] Start profiling
+- [ ] Verify only 5 columns visible: Function, Calls, Avg, Max, Total
+- [ ] Check "Show all columns"
+- [ ] Verify 6 columns now visible (includes "Min" column)
+- [ ] Uncheck → Min column hidden again
+
+---
+
+## 6. Preset Tests
+
+### 6.1 Save Preset
 - [ ] Select 5+ modules
 - [ ] In Presets section, type name: `test_preset`
 - [ ] Click "Save"
 - [ ] Verify preset appears in preset list
 
-### 5.2 Load Preset
+### 6.2 Load Preset
 - [ ] Click "Deselect All" in Module Browser
 - [ ] Click on `test_preset` in preset list
 - [ ] Verify the same 5+ modules are now selected
 
-### 5.3 Delete Preset
+### 6.3 Delete Preset
 - [ ] Click delete button (X) next to `test_preset`
 - [ ] Verify preset is removed from list
 - [ ] Re-save it for later tests
 
-### 5.4 Preset Persistence
+### 6.4 Preset Persistence
 - [ ] Save a preset
 - [ ] Quit game completely
 - [ ] Restart game, load save
@@ -131,22 +175,22 @@ This document provides a complete checklist of tests to perform before each rele
 
 ---
 
-## 6. Profile on Load Tests
+## 7. Profile on Load Tests
 
-### 6.1 Enable Auto-Profile
+### 7.1 Enable Auto-Profile
 - [ ] Select modules to profile
 - [ ] Check "Profile on Load" checkbox
 - [ ] Verify `_AUTOLOAD_` preset is created/updated
 - [ ] Quit game
 
-### 6.2 Verify Auto-Start
+### 7.2 Verify Auto-Start
 - [ ] Start game
 - [ ] Load save (or start new game)
 - [ ] Open Profiler window
 - [ ] Verify profiling is **already running** (button shows "Stop Profiling")
 - [ ] Verify stats are being collected
 
-### 6.3 Disable Auto-Profile
+### 7.3 Disable Auto-Profile
 - [ ] Uncheck "Profile on Load"
 - [ ] Quit and restart game
 - [ ] Load save
@@ -154,9 +198,9 @@ This document provides a complete checklist of tests to perform before each rele
 
 ---
 
-## 7. Flamegraph Tests
+## 8. Flamegraph Tests
 
-### 7.1 Recording
+### 8.1 Recording
 - [ ] Start profiling with several modules
 - [ ] Expand "Flamegraph" section
 - [ ] Click "Start Recording"
@@ -164,13 +208,13 @@ This document provides a complete checklist of tests to perform before each rele
 - [ ] Click "Stop Recording"
 - [ ] Verify "Samples: X" shows non-zero count
 
-### 7.2 Export
+### 8.2 Export
 - [ ] Click "Export Flamegraph"
 - [ ] Check `appdata` folder for `.folded` file
 - [ ] Open file in text editor → Verify format: `stack;frames count`
 - [ ] File should have meaningful stack traces (not empty)
 
-### 7.3 Callback Grouping
+### 8.3 Callback Grouping
 - [ ] Profile `axr_main` module
 - [ ] Record flamegraph during game activity
 - [ ] Export and examine `.folded` file
@@ -179,15 +223,26 @@ This document provides a complete checklist of tests to perform before each rele
   - `axr_main.make_callback/actor_on_update`
   - (Not just generic `axr_main.make_callback`)
 
-### 7.4 Clear Recording
+### 8.4 Clear Recording
+
+### 8.5 Export Button State (v1.1.2)
+- [ ] Do NOT enable flamegraph collection
+- [ ] Verify "Export Flamegraph" button is grayed out
+- [ ] Verify "(enable collection first)" hint shows
+- [ ] Enable "Collect Data" checkbox
+- [ ] Start and stop profiling (collect some data)
+- [ ] Disable "Collect Data" checkbox
+- [ ] Verify "Export Flamegraph" button is STILL enabled (has data to export)
+- [ ] Click Export → Verify it works
+- [ ] After export, verify button becomes grayed out again (data cleared)
 - [ ] Click "Clear" button
 - [ ] Verify samples count resets to 0
 
 ---
 
-## 8. CSV Export Tests
+## 9. CSV Export Tests
 
-### 8.1 Export Stats
+### 9.1 Export Stats
 - [ ] Profile for 30+ seconds with stats accumulated
 - [ ] Click "Export CSV"
 - [ ] Check `appdata` folder for `.csv` file
@@ -198,28 +253,28 @@ This document provides a complete checklist of tests to perform before each rele
 
 ---
 
-## 9. Logging Tests
+## 10. Logging Tests
 
-### 9.1 Open Log Viewer
+### 10.1 Open Log Viewer
 - [ ] Click **Logs** in DevTools menu
 - [ ] Log viewer window opens
 - [ ] Default logs visible (system messages)
 
-### 9.2 Log Filtering
+### 10.2 Log Filtering
 - [ ] Filter by severity (DEBUG, INFO, WARN, ERROR)
 - [ ] Filter by category
 - [ ] Clear filters → All logs visible
 
-### 9.3 Manual Logging (Console)
+### 10.3 Manual Logging (Console)
 - [ ] Open game console (`~` key)
 - [ ] Execute: `devtools_logging.log("INFO", "TEST", "Hello World")`
 - [ ] Verify message appears in log viewer
 
 ---
 
-## 10. Manual Timer API Tests
+## 11. Manual Timer API Tests
 
-### 10.1 Basic Timer (Console)
+### 11.1 Basic Timer (Console)
 - [ ] Open game console
 - [ ] Execute: `devtools_profiler.start_timer("test_section")`
 - [ ] Wait 2 seconds
@@ -227,7 +282,7 @@ This document provides a complete checklist of tests to perform before each rele
 - [ ] Execute: `devtools_profiler.get_stats("test_section")`
 - [ ] Verify output shows ~2000ms total time
 
-### 10.2 get_stats() Summary
+### 11.2 get_stats() Summary
 - [ ] Profile several modules for 10 seconds
 - [ ] Stop profiling
 - [ ] Execute: `devtools_profiler.get_stats()`
@@ -235,26 +290,26 @@ This document provides a complete checklist of tests to perform before each rele
 
 ---
 
-## 11. Edge Case & Stability Tests
+## 12. Edge Case & Stability Tests
 
-### 11.1 Many Modules
+### 12.1 Many Modules
 - [ ] Select 50+ modules
 - [ ] Start profiling
 - [ ] Play for 30 seconds
 - [ ] No stack overflow errors
 - [ ] Stop profiling cleanly
 
-### 11.2 Rapid Start/Stop
+### 12.2 Rapid Start/Stop
 - [ ] Click Start/Stop rapidly 10 times
 - [ ] No crashes or stuck states
 
-### 11.3 Level Transition
+### 12.3 Level Transition
 - [ ] Enable "Profile on Load"
 - [ ] Travel to another level (via guide or walking)
 - [ ] After load, verify profiling continues
 - [ ] Stats reflect new level activity
 
-### 11.4 Save/Load During Profile
+### 12.4 Save/Load During Profile
 - [ ] Start profiling
 - [ ] Quicksave (F5)
 - [ ] Continue profiling (no crash)
@@ -263,9 +318,9 @@ This document provides a complete checklist of tests to perform before each rele
 
 ---
 
-## 12. Early Initialization Tests (Advanced)
+## 13. Early Initialization Tests (Advanced)
 
-### 12.1 Verify DLTX Loading
+### 13.1 Verify DLTX Loading
 - [ ] Add `_g` and `axr_main` to preset
 - [ ] Enable "Profile on Load"
 - [ ] Restart game and load save
