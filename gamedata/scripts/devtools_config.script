@@ -96,11 +96,15 @@ function load_presets()
             local success, loaded = pcall(loader)
             if success and type(loaded) == "table" then
                 presets = loaded
-                printf("[DEVTOOLS] Presets loaded from: " .. tostring(path))
+                if DEVTOOLS_VERBOSE then
+                    printf("[DEVTOOLS] Presets loaded from: " .. tostring(path))
+                end
                 return true
             end
         end
-        printf("[DEVTOOLS] Failed to parse presets file")
+        if DEVTOOLS_VERBOSE then
+            printf("[DEVTOOLS] Failed to parse presets file")
+        end
     end
     
     presets = {}
@@ -111,7 +115,9 @@ function save_presets()
     local path = get_presets_path()
     local file = io.open(path, "w")
     if not file then
-        printf("[DEVTOOLS] Failed to save presets to: " .. tostring(path))
+        if DEVTOOLS_VERBOSE then
+            printf("[DEVTOOLS] Failed to save presets to: " .. tostring(path))
+        end
         return false
     end
     
@@ -119,8 +125,10 @@ function save_presets()
     file:write("-- Saved module selections for quick profiling setup\n\n")
     file:write("return " .. serialize_value(presets))
     file:close()
-    
-    printf("[DEVTOOLS] Presets saved to: " .. tostring(path))
+
+    if DEVTOOLS_VERBOSE then
+        printf("[DEVTOOLS] Presets saved to: " .. tostring(path))
+    end
     return true
 end
 
@@ -196,16 +204,21 @@ end
 -- INITIALIZATION
 -- ============================================================================
 
+-- Global verbosity flag for DevTools (set to true to enable verbose console logs)
+DEVTOOLS_VERBOSE = false
+
 -- ROOT-LEVEL: Load presets immediately when script loads
 -- This allows devtools_profiler to access presets at root level
 do
     local success = pcall(function()
         load_presets()
     end)
-    if success then
-        printf("[DEVTOOLS CONFIG] Presets loaded at root level")
-    else
-        printf("[DEVTOOLS CONFIG] Failed to load presets at root level (will retry in on_game_start)")
+    if DEVTOOLS_VERBOSE then
+        if success then
+            printf("[DEVTOOLS CONFIG] Presets loaded at root level")
+        else
+            printf("[DEVTOOLS CONFIG] Failed to load presets at root level (will retry in on_game_start)")
+        end
     end
 end
 

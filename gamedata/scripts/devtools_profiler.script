@@ -241,15 +241,17 @@ function get_stats(name)
 			count = count + 1
 			total_calls = total_calls + s.call_count
 		end
-		printf(
-			"[DEVTOOLS] Stats summary: "
-				.. tostring(count)
-				.. " functions tracked, "
-				.. tostring(total_calls)
-				.. " total calls"
-		)
-		printf("[DEVTOOLS] Use get_stats('function_name') to get specific stats")
-		printf("[DEVTOOLS] Use get_all_stats() to get full stats table")
+		if DEVTOOLS_VERBOSE then
+			printf(
+				"[DEVTOOLS] Stats summary: "
+					.. tostring(count)
+					.. " functions tracked, "
+					.. tostring(total_calls)
+					.. " total calls"
+			)
+			printf("[DEVTOOLS] Use get_stats('function_name') to get specific stats")
+			printf("[DEVTOOLS] Use get_all_stats() to get full stats table")
+		end
 		return { functions_tracked = count, total_calls = total_calls }
 	end
 
@@ -404,12 +406,16 @@ function register_module(module_name)
 
 	-- Check blacklist
 	if is_module_blacklisted(module_name) then
-		printf("[DEVTOOLS] Cannot register blacklisted module: " .. tostring(module_name))
+		if DEVTOOLS_VERBOSE then
+			printf("[DEVTOOLS] Cannot register blacklisted module: " .. tostring(module_name))
+		end
 		return false
 	end
 
 	registered_modules[module_name] = true
-	printf("[DEVTOOLS] Registered module for profiling: " .. tostring(module_name))
+	if DEVTOOLS_VERBOSE then
+		printf("[DEVTOOLS] Registered module for profiling: " .. tostring(module_name))
+	end
 	return true
 end
 
@@ -428,7 +434,9 @@ function unregister_module(module_name)
 	end
 
 	registered_modules[module_name] = nil
-	printf("[DEVTOOLS] Unregistered module: " .. tostring(module_name))
+	if DEVTOOLS_VERBOSE then
+		printf("[DEVTOOLS] Unregistered module: " .. tostring(module_name))
+	end
 	return true
 end
 
@@ -832,7 +840,9 @@ local function wrap_class_global(class_name, class_table, parent_module_name, or
 	deep_wrap_table(parent_module_name, class_table, class_name, originals, class_count_ref, visit_ref, already_wrapped)
 	
 	if class_count_ref[1] > 0 then
-		printf("[DEVTOOLS]   Wrapped class global '%s': %s methods", class_name, tostring(class_count_ref[1]))
+		if DEVTOOLS_VERBOSE then
+			printf("[DEVTOOLS]   Wrapped class global '%s': %s methods", class_name, tostring(class_count_ref[1]))
+		end
 	end
 	
 	return class_count_ref[1]
@@ -891,11 +901,15 @@ local function wrap_related_class_globals(module_name, originals, count_ref, vis
 	local class_count = 0
 	local classes_found = 0
 	
-	printf("[DEVTOOLS] Scanning module '%s' for LuaBind class methods...", module_name)
+	if DEVTOOLS_VERBOSE then
+		printf("[DEVTOOLS] Scanning module '%s' for LuaBind class methods...", module_name)
+	end
 	
 	local module_table = _G[module_name]
 	if not module_table or type(module_table) ~= "table" then
-		printf("[DEVTOOLS] Module '%s' not found or not a table", module_name)
+		if DEVTOOLS_VERBOSE then
+			printf("[DEVTOOLS] Module '%s' not found or not a table", module_name)
+		end
 		return 0
 	end
 	
@@ -903,13 +917,17 @@ local function wrap_related_class_globals(module_name, originals, count_ref, vis
 	local parsed_classes = parse_script_for_classes(module_name)
 	local parsed_count = 0
 	for _ in pairs(parsed_classes) do parsed_count = parsed_count + 1 end
-	printf("[DEVTOOLS]   Parsed %s classes from source file", tostring(parsed_count))
+	if DEVTOOLS_VERBOSE then
+		printf("[DEVTOOLS]   Parsed %s classes from source file", tostring(parsed_count))
+	end
 	
 	-- For each parsed class, try to wrap its methods via __newindex
 	for class_name, method_names in pairs(parsed_classes) do
 		local class_obj = module_table[class_name]
 		if class_obj and type(class_obj) == "userdata" then
-			printf("[DEVTOOLS]   Found class: %s with %s methods", class_name, tostring(#method_names))
+			if DEVTOOLS_VERBOSE then
+				printf("[DEVTOOLS]   Found class: %s with %s methods", class_name, tostring(#method_names))
+			end
 			classes_found = classes_found + 1
 			
 			if not wrapped_class_globals[class_name] then
@@ -936,23 +954,33 @@ local function wrap_related_class_globals(module_name, originals, count_ref, vis
 				end
 				
 				class_count = class_count + methods_wrapped
-				printf("[DEVTOOLS]     Wrapped %s methods from %s", tostring(methods_wrapped), class_name)
+				if DEVTOOLS_VERBOSE then
+					printf("[DEVTOOLS]     Wrapped %s methods from %s", tostring(methods_wrapped), class_name)
+				end
 			end
 		elseif class_obj then
-			printf("[DEVTOOLS]   Class %s exists but is type '%s' (expected userdata)", class_name, type(class_obj))
+			if DEVTOOLS_VERBOSE then
+				printf("[DEVTOOLS]   Class %s exists but is type '%s' (expected userdata)", class_name, type(class_obj))
+			end
 		else
-			printf("[DEVTOOLS]   Class %s not found in module table", class_name)
+			if DEVTOOLS_VERBOSE then
+				printf("[DEVTOOLS]   Class %s not found in module table", class_name)
+			end
 		end
 	end
 	
-	printf("[DEVTOOLS] Class scan complete: found %s classes, wrapped %s methods total", tostring(classes_found), tostring(class_count))
+	if DEVTOOLS_VERBOSE then
+		printf("[DEVTOOLS] Class scan complete: found %s classes, wrapped %s methods total", tostring(classes_found), tostring(class_count))
+	end
 	
 	return class_count
 end
 
 function wrap_module(module_name, module_table)
 	if not module_table then
-		printf("[DEVTOOLS] Cannot wrap module '" .. tostring(module_name) .. "' - not found")
+		if DEVTOOLS_VERBOSE then
+			printf("[DEVTOOLS] Cannot wrap module '" .. tostring(module_name) .. "' - not found")
+		end
 		return 0
 	end
 
@@ -962,7 +990,9 @@ function wrap_module(module_name, module_table)
 
 	-- Safety: don’t wrap blacklisted modules even if someone bypassed register_module
 	if is_module_blacklisted(module_name) then
-		printf("[DEVTOOLS] Skipping blacklisted module: " .. tostring(module_name))
+		if DEVTOOLS_VERBOSE then
+			printf("[DEVTOOLS] Skipping blacklisted module: " .. tostring(module_name))
+		end
 		return 0
 	end
 
@@ -988,7 +1018,9 @@ function wrap_module(module_name, module_table)
 	if class_count > 0 then
 		msg = msg .. string.format(" + %s class methods", tostring(class_count))
 	end
-	printf(msg)
+	if DEVTOOLS_VERBOSE then
+		printf(msg)
+	end
 	return count_ref[1]
 end
 
@@ -1012,7 +1044,9 @@ function unwrap_module(module_name, module_table)
 	wrapped_function_count = wrapped_function_count - count
 	wrapped_modules[module_name] = nil
 
-	printf("[DEVTOOLS] Unwrapped " .. tostring(count) .. " functions (deep) in '" .. tostring(module_name) .. "'")
+	if DEVTOOLS_VERBOSE then
+		printf("[DEVTOOLS] Unwrapped " .. tostring(count) .. " functions (deep) in '" .. tostring(module_name) .. "'")
+	end
 	return count
 end
 

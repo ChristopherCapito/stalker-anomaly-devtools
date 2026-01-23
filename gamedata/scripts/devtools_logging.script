@@ -74,7 +74,9 @@ function register_category(name, color)
     color = color or {200, 200, 200, 255}
     
     registered_categories[name] = color
-    printf("[DEVTOOLS] Registered log category: " .. tostring(name))
+    if DEVTOOLS_VERBOSE then
+        printf("[DEVTOOLS] Registered log category: " .. tostring(name))
+    end
     return true
 end
 

@@ -41,7 +41,9 @@ local function safe_register(cb_name, fn)
     if not RegisterScriptCallback then return false end
     local ok, err = pcall(RegisterScriptCallback, cb_name, fn)
     if not ok then
-        printf("[DEVTOOLS] RegisterScriptCallback(%s) failed: %s", tostring(cb_name), tostring(err))
+		if DEVTOOLS_VERBOSE then
+			printf("[DEVTOOLS] RegisterScriptCallback(%s) failed: %s", tostring(cb_name), tostring(err))
+		end
         return false
     end
     return true
@@ -54,7 +56,9 @@ local function try_init()
 	end
 	if not has_groups() then
 		if not warned then
-			printf("[DEVTOOLS] ImGui.Groups not ready - deferring devtools_imgui init")
+			if DEVTOOLS_VERBOSE then
+				printf("[DEVTOOLS] ImGui.Groups not ready - deferring devtools_imgui init")
+			end
 			warned = true
 		end
 		return false
@@ -65,7 +69,9 @@ local function try_init()
 	end
 	init_ui()
 	imgui_ready = true
-	printf("[DEVTOOLS] devtools_imgui initialized")
+	if DEVTOOLS_VERBOSE then
+		printf("[DEVTOOLS] devtools_imgui initialized")
+	end
 	return true
 end
 
@@ -586,7 +592,9 @@ function render_profiling_controls()
 			if success then
 				last_csv_export_path = path
 				last_csv_export_time = time_global()
-				printf("[DEVTOOLS] CSV exported successfully to: " .. tostring(path))
+				if DEVTOOLS_VERBOSE then
+					printf("[DEVTOOLS] CSV exported successfully to: " .. tostring(path))
+				end
 			else
 				last_csv_export_path = nil
 				last_csv_export_time = 0
@@ -606,9 +614,13 @@ function render_profiling_controls()
 		if ImGui.Button("Re-scan Now", vector2(100, 0)) then
 			local added = devtools_profiler.rewrap_registered_modules()
 			if added and added > 0 then
-				printf("[DEVTOOLS] Re-scan wrapped %d new functions", added)
+				if DEVTOOLS_VERBOSE then
+					printf("[DEVTOOLS] Re-scan wrapped %d new functions", added)
+				end
 			else
-				printf("[DEVTOOLS] Re-scan found no new functions to wrap")
+				if DEVTOOLS_VERBOSE then
+					printf("[DEVTOOLS] Re-scan found no new functions to wrap")
+				end
 			end
 		end
 		ImGui.SameLine(0, 20)
@@ -669,7 +681,9 @@ function render_profiling_controls()
 			if success then
 				last_flamegraph_export_path = path
 				last_flamegraph_export_time = time_global()
-				printf("[DEVTOOLS] Flamegraph exported successfully to: " .. tostring(path))
+				if DEVTOOLS_VERBOSE then
+					printf("[DEVTOOLS] Flamegraph exported successfully to: " .. tostring(path))
+				end
 			else
 				last_flamegraph_export_path = nil
 				last_flamegraph_export_time = 0
@@ -706,15 +720,21 @@ function render_profiling_controls()
 					fg_state = devtools_profiler.is_flamegraph_enabled()
 				end
 				if fg_state then
-					printf("[DEVTOOLS] Auto-start ENABLED (saved current selection + flamegraph enabled)")
+					if DEVTOOLS_VERBOSE then
+						printf("[DEVTOOLS] Auto-start ENABLED (saved current selection + flamegraph enabled)")
+					end
 				else
-					printf("[DEVTOOLS] Auto-start ENABLED (saved current selection)")
+					if DEVTOOLS_VERBOSE then
+						printf("[DEVTOOLS] Auto-start ENABLED (saved current selection)")
+					end
 				end
 			else
 				if type(devtools_profiler.delete_preset) == "function" then
 					devtools_profiler.delete_preset("_AUTOLOAD_")
 				end
-				printf("[DEVTOOLS] Auto-start DISABLED")
+				if DEVTOOLS_VERBOSE then
+					printf("[DEVTOOLS] Auto-start DISABLED")
+				end
 			end
 		end
 	end
@@ -1533,7 +1553,9 @@ init_ui = function()
             end
         end)
 
-        printf("[DEVTOOLS] ImGui panel registered. Open via ImGui menu -> DevTools")
+		if DEVTOOLS_VERBOSE then
+			printf("[DEVTOOLS] ImGui panel registered. Open via ImGui menu -> DevTools")
+		end
         _G.__DEVTOOLS_WIDGETS_HOOKED = true
     end
 end
@@ -1563,7 +1585,9 @@ function on_actor_update()
 		if elapsed >= profiling_duration_sec then
 			devtools_profiler.disable()
 			timed_profiling_enabled = false
-			printf("[DEVTOOLS] Timed profiling auto-stopped after " .. tostring(profiling_duration_sec) .. "s")
+			if DEVTOOLS_VERBOSE then
+				printf("[DEVTOOLS] Timed profiling auto-stopped after " .. tostring(profiling_duration_sec) .. "s")
+			end
 		end
 	end
 
