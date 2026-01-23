@@ -1,0 +1,3 @@
+- [] Add median execution time
+- [] Investigate coloring bug (moddb)
+- [] Profiler controls re-design / improve layout

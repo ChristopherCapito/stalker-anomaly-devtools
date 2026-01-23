@@ -1,4 +1,4 @@
-[1.1.2] Anomaly DevTools - Profiler & Logger
+[1.2.0] Anomaly DevTools - Profiler & Logger
 
 **Creator:** CDEV
 
@@ -6,7 +6,7 @@
 A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-code performance profiling and structured logging for any mod. Includes a full in-game ImGui interface for real-time monitoring.
 
 **Description:**
-Anomaly DevTools is designed to help modders optimize and debug their work without invasive code changes. Version 1.1.2 brings major performance improvements (2x FPS when profiling!) and new features like timed profiling and minimal mode.
+Anomaly DevTools is designed to help modders optimize and debug their work without invasive code changes. Version 1.2.0 adds LuaBind class method profiling and reduces console noise with a new verbose logging flag.
 
 **Key Features:**
 *   **Zero-Code Profiling:** Profile any Lua module without modifying its source code.
@@ -21,13 +21,11 @@ Anomaly DevTools is designed to help modders optimize and debug their work witho
 *   **Flamegraph Export:** Export call stack data in collapsed stacks format (`.folded`) for visualization in external tools like FlameGraph.pl, Inferno, and speedscope.
 *   **ImGui Interface:** Self-contained UI panel for controlling the profiler and viewing logs.
 
-**What's New in v1.1.2:**
-*   ⚡ **Major Performance:** 2x FPS improvement when profiling! (~40 FPS vs ~22 FPS)
-*   **New:** Timed Profiling - auto-stop after specified duration
-*   **New:** Minimal Mode - hide stats table for max FPS during flamegraph collection (~50 FPS)
-*   **New:** Row limiting controls (All/50/100/200) - default 100 rows
-*   **Improved:** Flamegraph export button disabled when no data collected
-*   **Improved:** Cleaner UI with simplified Display controls
+**What's New in v1.2.0:**
+*   **New:** LuaBind class method profiling (e.g., `utils_ui.UICellItem.Update`)
+*   **New:** `DEVTOOLS_VERBOSE` flag to toggle DevTools console output
+*   **Fixed:** Re-scan no longer re-wraps the same functions
+*   **Fixed:** Cross-module name pollution in wrapped function paths
 
 **Usage:**
 1.  Start the game.

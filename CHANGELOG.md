@@ -5,6 +5,19 @@ All notable changes to Anomaly DevTools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-01-23
+
+### Added
+- **LuaBind Class Method Profiling**: Auto-profiling now wraps LuaBind class methods (e.g., `utils_ui.UICellItem.Update`) by assigning wrappers through `__newindex` based on source parsing.
+- **Verbose Logging Flag**: Set `DEVTOOLS_VERBOSE` to enable or silence DevTools console output.
+
+### Fixed
+- **Re-scan Duplicate Wrapping**: Prevented repeated wrapping on every rescan by tracking paths already wrapped.
+- **Cross-Module Name Pollution**: Avoided wrapping functions that belong to other modules, preventing truncated/mangled names in exports.
+
+### Changed
+- **Console Noise**: Default console output is now quiet unless `DEVTOOLS_VERBOSE` is enabled.
+
 ## [1.1.2] - 2026-01-21
 
 ### Added
