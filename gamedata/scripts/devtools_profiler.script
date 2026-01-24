@@ -141,6 +141,23 @@ local function init_stats(name)
 	end
 end
 
+local function compute_median(samples)
+	if not samples or #samples == 0 then
+		return 0
+	end
+	local sorted = {}
+	for i = 1, #samples do
+		sorted[i] = samples[i]
+	end
+	table.sort(sorted)
+	local count = #sorted
+	local mid = math.floor((count + 1) / 2)
+	if count % 2 == 1 then
+		return sorted[mid]
+	end
+	return (sorted[mid] + sorted[mid + 1]) / 2
+end
+
 -- ============================================================================
 -- MANUAL TIMING API
 -- ============================================================================
@@ -262,11 +279,13 @@ function get_stats(name)
 	if s.call_count > 0 then
 		avg_ms = s.total_ms / s.call_count
 	end
+	local median_ms = compute_median(s.samples)
 
 	return {
 		call_count = s.call_count,
 		total_ms = s.total_ms,
 		avg_ms = avg_ms,
+		median_ms = median_ms,
 		min_ms = s.min_ms == math.huge and 0 or s.min_ms,
 		max_ms = s.max_ms,
 		last_ms = s.last_ms,
@@ -1408,7 +1427,7 @@ function export_to_csv(filepath)
 	end
 
 	-- Write CSV header
-	file:write("Function,Call Count,Avg (ms),Min (ms),Max (ms),Total (ms),Last (ms)\n")
+	file:write("Function,Call Count,Avg (ms),Median (ms),Min (ms),Max (ms),Total (ms),Last (ms)\n")
 
 	-- Sort by total time (descending) for easier analysis
 	table.sort(names, function(a, b)
@@ -1426,10 +1445,11 @@ function export_to_csv(filepath)
 		if s then
 			file:write(
 				string.format(
-					"%s,%d,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+					"%s,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
 					escape_csv_field(name),
 					s.call_count,
 					s.avg_ms,
+					s.median_ms,
 					s.min_ms == math.huge and 0 or s.min_ms,
 					s.max_ms,
 					s.total_ms,
