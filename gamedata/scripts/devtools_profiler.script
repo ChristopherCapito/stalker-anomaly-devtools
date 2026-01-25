@@ -3,16 +3,33 @@
     DevTools Profiler - Generic Performance Monitoring for S.T.A.L.K.E.R. Anomaly
     
     A standalone, mod-agnostic profiling system with automatic function wrapping.
-    Can profile ANY Lua module without requiring code changes to the target mod.
     
-    Quick Start:
-        -- Profile a module (optional - can also select via UI):
+    *** ZERO-CONFIG AUTO-DISCOVERY (DEFAULT) ***
+    The profiler automatically discovers and profiles all loaded Lua modules on startup.
+    No code modifications needed. Just load your scripts normally and profiling happens
+    automatically. This is the recommended usage pattern.
+    
+    To make your scripts discoverable:
+    - Load them as normal scripts (via bind_* or _g.script or callbacks)
+    - Store them in _G with a module name (e.g., _G.my_custom_module = {...})
+    - The profiler will auto-discover and profile them automatically
+    
+    Quick Start (for game modders - no code changes required):
+        1. Install DevTools mod
+        2. Start the game (profiler auto-discovers modules)
+        3. Press F1 to open ImGui menu
+        4. Select DevTools > Profiler to view performance data
+    
+    *** ADVANCED: Manual Profiling Control (Optional) ***
+    For advanced users who want manual control:
+        -- Register a specific module (optional):
         devtools_profiler.register_module("my_mod")
         
-        -- Enable profiling:
+        -- Enable/disable profiling:
         devtools_profiler.enable()
+        devtools_profiler.disable()
         
-        -- Check stats:
+        -- Get statistics:
         local stats = devtools_profiler.get_all_stats()
     
     Manual Timing (for custom code sections):
@@ -414,10 +431,18 @@ function discover_modules()
 end
 
 -- ============================================================================
--- MODULE REGISTRATION API
+-- MODULE REGISTRATION API (ADVANCED - NOT REQUIRED FOR NORMAL USAGE)
+-- ============================================================================
+-- 
+-- These functions are for advanced users who want manual control over profiling.
+-- For normal usage, modules are discovered and profiled automatically. You do not
+-- need to call these functions.
+--
+-- Note: Any module stored in _G will be automatically discovered and profiled
+-- on startup. No manual registration needed.
 -- ============================================================================
 
--- Register a module for profiling
+-- Register a module for profiling (Advanced - normally not needed)
 function register_module(module_name)
 	if registered_modules[module_name] then
 		return false -- Already registered

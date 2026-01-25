@@ -2,7 +2,7 @@
 # Usage: .\package.ps1
 
 $ModName = "Anomaly_DevTools"
-$Version = "1.2.0"
+$Version = "1.2.1"
 $OutputDir = "$PSScriptRoot\releases"
 $ZipName = "${ModName}_v${Version}.zip"
 
@@ -16,7 +16,8 @@ if (-not (Test-Path $OutputDir)) {
 # Files to include in the package
 $FilesToInclude = @(
     "gamedata",
-    "README.txt",
+    "README.md",
+    "documentation.md",
     "meta.ini"
 )
 

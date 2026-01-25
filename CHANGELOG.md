@@ -5,6 +5,18 @@ All notable changes to Anomaly DevTools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-01-25
+
+### Added
+- **Median Execution Time**: New median statistic provides more representative performance data than average alone
+- **Toggleable Columns**: Individual column visibility controls (Calls/Avg/Median/Min/Max/Total) - defaults to Calls/Avg/Median
+
+### Fixed
+- **Module Color Consistency**: Fixed color mapping bug where function rows showed wrong module colors in stats table
+
+### Changed
+- **Documentation**: Overhauled to emphasize zero-config auto-discovery workflow
+
 ## [1.2.0] - 2026-01-23
 
 ### Added

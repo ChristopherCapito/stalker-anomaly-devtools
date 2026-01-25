@@ -100,7 +100,15 @@ local hide_fast_functions = false
 local sort_column = 3 -- Default: Avg (ms)
 local sort_ascending = false -- Descending (slowest first)
 local max_visible_rows = 100 -- Limits rows shown for performance (0 = unlimited)
-local show_all_columns = false -- Show Min column (false = 5 columns, true = 6 columns)
+local show_calls = true
+local show_avg = true
+local show_median = true
+local show_min = false
+local show_max = false
+local show_total = false
+
+local sync_module_colors
+local get_module_color_by_name
 local minimal_mode = false -- Hide stats table entirely (for flamegraph collection)
 -- Rewrap controls
 local auto_rewrap_enabled = false
@@ -123,6 +131,12 @@ local STATS_UPDATE_INTERVAL = 150 -- Update every 150ms (roughly 6-7 FPS for sta
 local cached_sort_column = 3
 local cached_sort_ascending = false
 local cached_hide_fast = false
+local cached_show_calls = true
+local cached_show_avg = true
+local cached_show_median = true
+local cached_show_min = false
+local cached_show_max = false
+local cached_show_total = false
 
 -- Presets state
 local preset_name_input = ""
@@ -462,6 +476,9 @@ function render_profiling_controls()
 	if profiler_ok and type(devtools_profiler.get_wrapped_modules) == "function" then
 		wrapped_modules = devtools_profiler.get_wrapped_modules() or {}
 	end
+	if #wrapped_modules > 0 then
+		sync_module_colors(wrapped_modules)
+	end
 
 	local registered = {}
 	if profiler_ok and type(devtools_profiler.get_registered_modules) == "function" then
@@ -774,10 +791,38 @@ function render_profiling_controls()
 	if new_minimal ~= minimal_mode then
 		minimal_mode = new_minimal
 	end
+
+	ImGui.Spacing()
+	ImGui.Text("Columns:")
 	ImGui.SameLine()
-	local _, new_all_cols = ImGui.Checkbox("Show all columns", show_all_columns)
-	if new_all_cols ~= show_all_columns then
-		show_all_columns = new_all_cols
+	local _, new_calls = ImGui.Checkbox("Calls", show_calls)
+	if new_calls ~= show_calls then
+		show_calls = new_calls
+	end
+	ImGui.SameLine()
+	local _, new_avg = ImGui.Checkbox("Avg", show_avg)
+	if new_avg ~= show_avg then
+		show_avg = new_avg
+	end
+	ImGui.SameLine()
+	local _, new_median = ImGui.Checkbox("Median", show_median)
+	if new_median ~= show_median then
+		show_median = new_median
+	end
+	ImGui.SameLine()
+	local _, new_min = ImGui.Checkbox("Min", show_min)
+	if new_min ~= show_min then
+		show_min = new_min
+	end
+	ImGui.SameLine()
+	local _, new_max = ImGui.Checkbox("Max", show_max)
+	if new_max ~= show_max then
+		show_max = new_max
+	end
+	ImGui.SameLine()
+	local _, new_total = ImGui.Checkbox("Total", show_total)
+	if new_total ~= show_total then
+		show_total = new_total
 	end
 
 	-- CSV export path display
@@ -834,7 +879,7 @@ function render_profiling_controls()
 			if i > 1 then
 				ImGui.SameLine(0, 5)
 			end
-			ImGui.PushStyleColor(ImGuiCol.Text, get_module_color_by_index(i))
+			ImGui.PushStyleColor(ImGuiCol.Text, get_module_color_by_name(mod_name))
 			ImGui.Text(mod_name)
 			ImGui.PopStyleColor(1)
 		end
@@ -859,6 +904,12 @@ function render_stats_table()
 	local settings_changed = (sort_column ~= cached_sort_column)
 		or (sort_ascending ~= cached_sort_ascending)
 		or (hide_fast_functions ~= cached_hide_fast)
+		or (show_calls ~= cached_show_calls)
+		or (show_avg ~= cached_show_avg)
+		or (show_median ~= cached_show_median)
+		or (show_min ~= cached_show_min)
+		or (show_max ~= cached_show_max)
+		or (show_total ~= cached_show_total)
 
 	if settings_changed or (tg - last_stats_update > STATS_UPDATE_INTERVAL) then
 		-- Rebuild stats (expensive operation)
@@ -882,25 +933,30 @@ function render_stats_table()
 			end
 		end
 
-		-- Sort
+		-- Sort (dynamic by visible columns)
+		local columns = {
+			{ name = "Function", width = 260, key = "name" },
+		}
+		if show_calls then table.insert(columns, { name = "Calls", width = 55, key = "call_count" }) end
+		if show_avg then table.insert(columns, { name = "Avg (ms)", width = 65, key = "avg_ms" }) end
+		if show_median then table.insert(columns, { name = "Median (ms)", width = 75, key = "median_ms" }) end
+		if show_min then table.insert(columns, { name = "Min (ms)", width = 65, key = "min_ms" }) end
+		if show_max then table.insert(columns, { name = "Max (ms)", width = 65, key = "max_ms" }) end
+		if show_total then table.insert(columns, { name = "Total (ms)", width = 75, key = "total_ms" }) end
+
+		if sort_column > #columns then
+			sort_column = 1
+			sort_ascending = true
+		end
+		local sort_key = columns[sort_column].key
+
 		table.sort(display_list, function(a, b)
 			local val_a, val_b
-			if sort_column == 1 then
+			if sort_key == "name" then
 				val_a, val_b = a.name, b.name
-			elseif sort_column == 2 then
-				val_a, val_b = a.stats.call_count, b.stats.call_count
-			elseif sort_column == 3 then
-				val_a, val_b = a.stats.avg_ms, b.stats.avg_ms
-			elseif sort_column == 4 then
-				val_a, val_b = a.stats.min_ms, b.stats.min_ms
-			elseif sort_column == 5 then
-				val_a, val_b = a.stats.max_ms, b.stats.max_ms
-			elseif sort_column == 6 then
-				val_a, val_b = a.stats.total_ms, b.stats.total_ms
 			else
-				val_a, val_b = a.stats.avg_ms, b.stats.avg_ms
+				val_a, val_b = a.stats[sort_key], b.stats[sort_key]
 			end
-
 			if sort_ascending then
 				return val_a < val_b
 			else
@@ -916,6 +972,12 @@ function render_stats_table()
 		cached_sort_column = sort_column
 		cached_sort_ascending = sort_ascending
 		cached_hide_fast = hide_fast_functions
+		cached_show_calls = show_calls
+		cached_show_avg = show_avg
+		cached_show_median = show_median
+		cached_show_min = show_min
+		cached_show_max = show_max
+		cached_show_total = show_total
 		last_stats_update = tg
 	else
 		-- Use cached data
@@ -955,17 +1017,16 @@ function render_stats_table()
 		return
 	end
 
-	-- Column definitions (conditionally include Min column)
+	-- Column definitions (dynamic)
 	local columns = {
-		{ name = "Function", width = 260, sort_idx = 1 },
-		{ name = "Calls", width = 55, sort_idx = 2 },
-		{ name = "Avg (ms)", width = 65, sort_idx = 3 },
+		{ name = "Function", width = 260 },
 	}
-	if show_all_columns then
-		table.insert(columns, { name = "Min (ms)", width = 65, sort_idx = 4 })
-	end
-	table.insert(columns, { name = "Max (ms)", width = 65, sort_idx = 5 })
-	table.insert(columns, { name = "Total (ms)", width = 75, sort_idx = 6 })
+	if show_calls then table.insert(columns, { name = "Calls", width = 55 }) end
+	if show_avg then table.insert(columns, { name = "Avg (ms)", width = 65 }) end
+	if show_median then table.insert(columns, { name = "Median (ms)", width = 75 }) end
+	if show_min then table.insert(columns, { name = "Min (ms)", width = 65 }) end
+	if show_max then table.insert(columns, { name = "Max (ms)", width = 65 }) end
+	if show_total then table.insert(columns, { name = "Total (ms)", width = 75 }) end
 
 	local col_count = #columns
 
@@ -980,7 +1041,7 @@ function render_stats_table()
 		for i, col in ipairs(columns) do
 			ImGui.TableNextColumn()
 			local label = col.name
-			local sort_idx = col.sort_idx
+			local sort_idx = i
 			if sort_column == sort_idx then
 				label = label .. (sort_ascending and " ^" or " v")
 			end
@@ -1016,30 +1077,46 @@ function render_stats_table()
 			ImGui.PopStyleColor(1)
 
 			-- Calls
-			ImGui.TableNextColumn()
-			ImGui.Text(tostring(s.call_count))
+			if show_calls then
+				ImGui.TableNextColumn()
+				ImGui.Text(tostring(s.call_count))
+			end
 
 			-- Avg (colored by timing)
-			ImGui.TableNextColumn()
-			ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.avg_ms))
-			ImGui.Text(format_compact(s.avg_ms))
-			ImGui.PopStyleColor(1)
+			if show_avg then
+				ImGui.TableNextColumn()
+				ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.avg_ms))
+				ImGui.Text(format_compact(s.avg_ms))
+				ImGui.PopStyleColor(1)
+			end
 
-			-- Min (only if showing all columns)
-			if show_all_columns then
+			-- Median (colored by timing)
+			if show_median then
+				ImGui.TableNextColumn()
+				ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.median_ms))
+				ImGui.Text(format_compact(s.median_ms))
+				ImGui.PopStyleColor(1)
+			end
+
+			-- Min
+			if show_min then
 				ImGui.TableNextColumn()
 				ImGui.Text(format_compact(s.min_ms))
 			end
 
 			-- Max (colored by timing)
-			ImGui.TableNextColumn()
-			ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.max_ms))
-			ImGui.Text(format_compact(s.max_ms))
-			ImGui.PopStyleColor(1)
+			if show_max then
+				ImGui.TableNextColumn()
+				ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.max_ms))
+				ImGui.Text(format_compact(s.max_ms))
+				ImGui.PopStyleColor(1)
+			end
 
 			-- Total
-			ImGui.TableNextColumn()
-			ImGui.Text(format_compact(s.total_ms))
+			if show_total then
+				ImGui.TableNextColumn()
+				ImGui.Text(format_compact(s.total_ms))
+			end
 		end
 
 		ImGui.EndTable()
@@ -1427,6 +1504,15 @@ end
 local module_colors = {}
 local color_index = 0
 
+sync_module_colors = function(wrapped_modules)
+	module_colors = {}
+	color_index = 0
+	for i, module_name in ipairs(wrapped_modules) do
+		color_index = color_index + 1
+		module_colors[module_name] = get_module_color_by_index(color_index)
+	end
+end
+
 function get_module_color(func_name)
 	local module_name = func_name:match("^([^%.]+)%.")
 	if not module_name then
@@ -1439,6 +1525,10 @@ function get_module_color(func_name)
 	end
 
 	return module_colors[module_name]
+end
+
+get_module_color_by_name = function(module_name)
+	return module_colors[module_name] or COLOR_WHITE
 end
 
 function get_module_color_by_index(index)
