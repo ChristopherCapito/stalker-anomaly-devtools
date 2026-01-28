@@ -80,9 +80,14 @@ safe_register("on_game_start", function()
 end)
 
 safe_register("actor_on_update", function()
+    -- Initialization check (only runs until imgui_ready is true)
     if not imgui_ready then
         try_init()
+        return  -- Early return - don't run update logic until initialized
     end
+    
+    -- Now call the main update function
+    on_actor_update()
 end)
 
 -- ============================================================================
@@ -2145,7 +2150,18 @@ function on_actor_update()
 		local tg = time_global()
 		if (tg - (last_rewrap_tg or 0)) >= (rewrap_interval_ms or 1000) then
 			if type(devtools_profiler.rewrap_registered_modules) == "function" then
-				devtools_profiler.rewrap_registered_modules()
+				-- Log to devtools_logging if available
+				if devtools_logging and type(devtools_logging.debug_log) == "function" then
+					devtools_logging.debug_log("PERF", "Auto-rewrap: Scanning for new functions...")
+				end
+				local new_count = devtools_profiler.rewrap_registered_modules()
+				if devtools_logging and type(devtools_logging.info) == "function" then
+					if new_count and new_count > 0 then
+						devtools_logging.info("PERF", string.format("Auto-rewrap: Found %d new functions", new_count))
+					else
+						devtools_logging.debug_log("PERF", "Auto-rewrap: No new functions found")
+					end
+				end
 			end
 			last_rewrap_tg = tg
 		end
