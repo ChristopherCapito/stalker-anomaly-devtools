@@ -1,4 +1,4 @@
-# Anomaly DevTools - Release Testing Guide (v1.1.2)
+# Anomaly DevTools - Release Testing Guide (v1.2.2)
 
 This document provides a complete checklist of tests to perform before each release to prevent regressions.
 

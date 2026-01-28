@@ -1,12 +1,9 @@
-[1.2.1] Anomaly DevTools - Profiler & Logger
+[1.2.2] Anomaly DevTools - Profiler & Logger
 
 **Creator:** CDEV
 
 **Short Description:**
 A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-code performance profiling and structured logging for any mod. Includes a full in-game ImGui interface for real-time monitoring.
-
-**Description:**
-Anomaly DevTools is designed to help modders optimize and debug their work without invasive code changes. Version 1.2.1 brings a major documentation overhaul that emphasizes the zero-config auto-discovery workflow—just install and profile, no code changes needed.
 
 **Key Features:**
 *   **Zero-Code Auto-Discovery:** Profile any Lua module without modifying its source code—just load your mod normally and DevTools discovers it automatically.
@@ -21,11 +18,24 @@ Anomaly DevTools is designed to help modders optimize and debug their work witho
 *   **Flamegraph Export:** Export call stack data in collapsed stacks format (`.folded`) for visualization in external tools like FlameGraph.pl, Inferno, and speedscope.
 *   **ImGui Interface:** Self-contained UI panel for controlling the profiler and viewing logs.
 
-**What's New in v1.2.1:**
-*   **New:** Median execution time statistic for more representative performance data
-*   **New:** Toggleable column visibility (Calls/Avg/Median/Min/Max/Total) - customize your view
-*   **Fixed:** Module color mapping bug where functions showed wrong colors
-*   **Improved:** Documentation overhauled to emphasize zero-config workflow
+**What's New in v1.2.2:**
+
+**Critical Fixes:**
+*   **Fixed:** Exponential function count growth when repeatedly starting/stopping profiling
+*   **Fixed:** Auto-rewrap feature not running (now properly executes at intervals)
+*   **Fixed:** Decimal precision regression with toggleable high-precision mode
+
+**New Features:**
+*   **New:** Custom module colors with color picker UI - set your own colors and persist with presets
+*   **New:** High precision display mode (6 decimal places) for detailed analysis
+*   **New:** Elapsed time tracking during profiling sessions
+*   **New:** Improved preset management with dropdown selector and better save/load workflow
+*   **New:** Auto-rewrap logging to DevTools logger for better visibility
+
+**UI Improvements:**
+*   **Added:** Comprehensive tooltips for all UI controls
+*   **Improved:** Better preset save/load workflow with visual feedback
+*   **Improved:** Organized filesystem structure (`devtools/` folder for all exports)
 
 **Usage:**
 1.  Start the game.

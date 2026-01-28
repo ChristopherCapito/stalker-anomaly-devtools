@@ -120,12 +120,28 @@
 
 ---
 
-## 📝 Version 1.2.1
+## 📝 Version 1.2.2
 
-✨ Median execution time statistic  
-🎨 Toggleable column visibility (Calls/Avg/Median/Min/Max/Total)  
-🎯 Fixed module color mapping bug  
-📖 Documentation overhaul  
+🔧 **Critical Fixes:**
+- Fixed exponential function count growth when repeatedly starting/stopping profiling
+- Fixed auto-rewrap feature not running (now properly executes at intervals)
+- Fixed decimal precision regression with toggleable high-precision mode
+
+✨ **New Features:**
+- Custom module colors with color picker UI
+- High precision display mode (6 decimal places) for detailed analysis
+- Elapsed time tracking during profiling sessions
+- Improved preset management with dropdown selector
+- Auto-rewrap logging to DevTools logger
+
+🎨 **UI Improvements:**
+- Comprehensive tooltips for all controls
+- Better preset save/load workflow with visual feedback
+- Organized filesystem structure (`devtools/` folder)
+
+📦 **Previous Versions:**
+- **v1.2.1**: Median execution time, toggleable columns, color mapping fix
+- **v1.2.0**: LuaBind class method profiling, verbose logging flag  
 
 ---
 

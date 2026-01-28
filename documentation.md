@@ -12,7 +12,7 @@
 - [Quick Start](#quick-start)
 - [Use Cases](#use-cases)
 - [Features in Detail](#features-in-detail)
-- [What's New in v1.2.0](#whats-new-in-v120)
+- [What's New in v1.2.2](#whats-new-in-v122)
 - [Important Notes](#important-notes)
 - [Files Included](#files-included)
 - [Advanced Usage](#advanced-usage)
@@ -162,8 +162,25 @@ That's it. No code changes. No registration. No hassle.
 
 ---
 
-## What's New in v1.2.0
+## What's New in v1.2.2
 
+- 🔧 **Critical Fixes**: Fixed exponential function count growth bug, auto-rewrap not running, and decimal precision regression
+- 🎨 **Custom Module Colors**: Set custom colors for modules via color picker UI, persisted with presets
+- 📊 **High Precision Mode**: Toggleable 6-decimal precision display for detailed analysis
+- ⏱️ **Elapsed Time Tracking**: Shows elapsed measurement time during profiling sessions
+- 🎯 **Improved Preset Management**: Dropdown selector with better save/load workflow
+- 📝 **Auto-Rewrap Logging**: Auto-rewrap operations now log to DevTools logger
+- 💡 **Comprehensive Tooltips**: Added tooltips for all UI controls
+- 📁 **Filesystem Restructure**: Organized `devtools/` folder structure for all exports
+
+## Previous Versions
+
+### v1.2.1
+- Median execution time statistic
+- Toggleable column visibility
+- Fixed module color mapping bug
+
+### v1.2.0
 - ✨ **LuaBind class method profiling** - Now wraps class methods from bindings (e.g., `utils_ui.UICellItem.Update`)
 - 🔇 **`DEVTOOLS_VERBOSE` flag** - Control console output noise
 - 🐛 **Fixed re-scan duplicate wrapping** - No more repeated wrapping on rescans
@@ -280,7 +297,7 @@ Found a bug? Have a feature request?
 
 **Created by:** CDEV
 
-**Version:** 1.2.1
+**Version:** 1.2.2
 
 **For:** S.T.A.L.K.E.R. Anomaly modding community
 

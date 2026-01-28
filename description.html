@@ -1,4 +1,4 @@
-<h1>Anomaly DevTools - Profiler & Logger v1.1.2</h1>
+<h1>Anomaly DevTools - Profiler & Logger v1.2.2</h1>
 
 <p><strong>A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-code performance profiling and structured logging for any mod.</strong></p>
 
@@ -17,14 +17,23 @@
     <li><strong>Profile on Load:</strong> Automatically start profiling when the game loads or transitions between locations (optional).</li>
 </ul>
 
-<h2>What's New in v1.1.2</h2>
+<h2>What's New in v1.2.2</h2>
 <ul>
-    <li><strong>⚡ Major Performance:</strong> 2x FPS improvement when profiling! Stats caching, pre-computed colors, and row limiting (~40 FPS vs ~22 FPS)</li>
-    <li><strong>New:</strong> Timed Profiling - auto-stop after specified duration (1-300 seconds)</li>
-    <li><strong>New:</strong> Minimal Mode - hide stats table for maximum FPS during flamegraph collection (~50 FPS)</li>
-    <li><strong>New:</strong> Row limiting controls (All/50/100/200) - default 100 rows for optimal performance</li>
-    <li><strong>Improved:</strong> Flamegraph export button disabled when no data collected</li>
-    <li><strong>Improved:</strong> Cleaner UI with simplified Display controls</li>
+    <li><strong>🔧 Critical Fixes:</strong> Fixed exponential function count growth bug, auto-rewrap not running, and decimal precision regression</li>
+    <li><strong>New:</strong> Custom module colors with color picker UI - set your own colors and persist with presets</li>
+    <li><strong>New:</strong> High precision display mode (6 decimal places) for detailed analysis</li>
+    <li><strong>New:</strong> Elapsed time tracking during profiling sessions</li>
+    <li><strong>New:</strong> Improved preset management with dropdown selector</li>
+    <li><strong>New:</strong> Auto-rewrap logging to DevTools logger</li>
+    <li><strong>Improved:</strong> Comprehensive tooltips for all UI controls</li>
+    <li><strong>Improved:</strong> Organized filesystem structure (devtools/ folder)</li>
+</ul>
+
+<h2>Previous Versions</h2>
+<ul>
+    <li><strong>v1.2.1:</strong> Median execution time, toggleable columns, color mapping fix</li>
+    <li><strong>v1.2.0:</strong> LuaBind class method profiling, verbose logging flag</li>
+    <li><strong>v1.1.2:</strong> Major performance improvements (2x FPS), timed profiling, minimal mode</li>
 </ul>
 
 <h2>Installation</h2>

@@ -5,6 +5,32 @@ All notable changes to Anomaly DevTools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-01-28
+
+### Added
+- **Custom Module Colors**: Users can now set custom colors for modules via color picker UI. Colors are persisted with presets and override auto-assigned colors.
+- **High Precision Display Mode**: New toggleable precision mode for timing values (6 decimal places) for detailed analysis. Default remains compact format for performance.
+- **Elapsed Time Display**: Statistics table now shows elapsed measurement time during profiling (e.g., "Total: X ms across Y calls (elapsed: Z s)").
+- **Preset Dropdown Selector**: Improved preset management with dropdown/combo selector, Load/Delete buttons, and streamlined save workflow.
+- **Auto-Rewrap Logging**: Auto-rewrap operations now log to DevTools logger (PERF category) for better visibility and debugging.
+- **Comprehensive Tooltips**: Added tooltips for all UI controls including Start/Stop Profiling, Reset Stats, Export CSV, Timed Profiling, Re-scan, Auto Rewrap, and more.
+
+### Fixed
+- **Critical: Function Rewrapping Bug**: Fixed exponential function count growth when repeatedly starting/stopping profiling or clicking "Re-scan Now". Implemented identity-based wrapper tracking to prevent double-wrapping.
+- **Auto-Rewrap Not Running**: Fixed bug where auto-rewrap feature was implemented but never actually executed. Auto-rewrap now properly runs at specified intervals.
+- **Preset Saving Failures**: Improved error handling and user feedback for preset saving. Added clear error messages showing file paths when directory creation fails.
+- **Decimal Precision Regression**: Fixed precision loss in v1.2.0 by making precision toggleable with "not super precise" as default for performance.
+- **Module Color Persistence**: Fixed issue where custom module colors were not being honored. Custom colors now persist across sessions and are saved with presets.
+- **Userdata Handling**: Enhanced safety checks for LuaBind class objects (userdata) when unwrapping functions, preventing crashes.
+
+### Changed
+- **Filesystem Restructure**: Reorganized file structure to use dedicated `devtools/` folder:
+  - Presets: `devtools/presets/devtools_presets.txt`
+  - CSV exports: `devtools/devtools_profiler_export.csv`
+  - Flamegraph exports: `devtools/devtools_flamegraph.folded`
+- **Preset Format**: Presets now save custom module colors along with module selection and flamegraph state.
+- **UI Layout**: Improved preset management UI with better grouping and visual feedback for save operations.
+
 ## [1.2.1] - 2026-01-25
 
 ### Added
