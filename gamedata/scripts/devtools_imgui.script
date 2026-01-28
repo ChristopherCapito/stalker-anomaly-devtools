@@ -150,6 +150,9 @@ local CSV_EXPORT_MESSAGE_DURATION = 5000 -- Show message for 5 seconds
 -- Flamegraph export state
 local last_flamegraph_export_path = nil
 local last_flamegraph_export_time = 0
+local flamegraph_collect_message = nil
+local flamegraph_collect_message_time = 0
+local FLAMEGRAPH_MESSAGE_DURATION = 3000 -- Show message for 3 seconds
 
 -- Timed profiling state
 local timed_profiling_enabled = false
@@ -525,6 +528,13 @@ function render_profiling_controls()
 			end
 			timed_profiling_enabled = false
 		end
+		-- Tooltip for Stop Profiling
+		if ImGui.BeginItemTooltip() then
+			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+			ImGui.Text("Stop profiling and restore original functions.\nStatistics remain visible until Reset Stats is clicked.")
+			ImGui.PopTextWrapPos()
+			ImGui.EndTooltip()
+		end
 
 		-- Show timer countdown if timed profiling is active
 		if timed_profiling_enabled then
@@ -553,6 +563,13 @@ function render_profiling_controls()
 				end
 			end
 		end
+		-- Tooltip for Start Profiling
+		if ImGui.BeginItemTooltip() then
+			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+			ImGui.Text("Start profiling selected modules.\nWraps functions to collect timing statistics.\nRequires at least one module to be selected.")
+			ImGui.PopTextWrapPos()
+			ImGui.EndTooltip()
+		end
 
 		if not can_start then
 			ImGui.PopStyleColor(1)
@@ -578,6 +595,13 @@ function render_profiling_controls()
 		if new_timed ~= timed_profiling_enabled then
 			timed_profiling_enabled = new_timed
 		end
+		-- Tooltip for Timed checkbox
+		if ImGui.BeginItemTooltip() then
+			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+			ImGui.Text("Automatically stop profiling after the specified duration.\nPerfect for consistent benchmark recordings.\nRange: 1-300 seconds.")
+			ImGui.PopTextWrapPos()
+			ImGui.EndTooltip()
+		end
 
 		if timed_profiling_enabled then
 			ImGui.SameLine()
@@ -590,6 +614,13 @@ function render_profiling_controls()
 					profiling_duration_sec = math.max(1, math.min(300, math.floor(num)))
 				end
 			end
+			-- Tooltip for duration input
+			if ImGui.BeginItemTooltip() then
+				ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+				ImGui.Text("Profiling duration in seconds.\nRange: 1-300 seconds (5 minutes max).\nProfiling will automatically stop after this time.")
+				ImGui.PopTextWrapPos()
+				ImGui.EndTooltip()
+			end
 		end
 	end
 
@@ -599,6 +630,13 @@ function render_profiling_controls()
 		if profiler_ok and type(devtools_profiler.reset_all) == "function" then
 			devtools_profiler.reset_all()
 		end
+	end
+	-- Tooltip for Reset Stats
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Clear all collected statistics.\nUseful for starting a fresh profiling session.\nDoes not stop profiling - use Stop Profiling to do that.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
 	end
 
 	ImGui.SameLine()
@@ -621,6 +659,13 @@ function render_profiling_controls()
 			last_csv_export_time = 0
 		end
 	end
+	-- Tooltip for Export CSV
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Export all statistics to a CSV file.\nIncludes: Function name, call count, avg/median/min/max/total times.\nSaved to appdata folder. Open in Excel or any spreadsheet tool.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 
 	ImGui.Spacing()
 	ImGui.Separator()
@@ -640,12 +685,28 @@ function render_profiling_controls()
 				end
 			end
 		end
+		-- Tooltip for Re-scan Now
+		if ImGui.BeginItemTooltip() then
+			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+			ImGui.Text("Manually scan registered modules for newly added or overwritten functions.\nUseful when hot-reloading scripts during development.")
+			ImGui.PopTextWrapPos()
+			ImGui.EndTooltip()
+		end
+		
 		ImGui.SameLine(0, 20)
 		local _, new_auto = ImGui.Checkbox("Auto rewrap", auto_rewrap_enabled)
 		if new_auto ~= auto_rewrap_enabled then
 			auto_rewrap_enabled = new_auto
 			last_rewrap_tg = 0
 		end
+		-- Tooltip for Auto rewrap checkbox
+		if ImGui.BeginItemTooltip() then
+			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+			ImGui.Text("Automatically re-scan modules at the specified interval.\nUseful for development when scripts are being hot-reloaded.\nWARNING: Adds CPU overhead (~5-50ms per scan).")
+			ImGui.PopTextWrapPos()
+			ImGui.EndTooltip()
+		end
+		
 		ImGui.SameLine()
 		ImGui.Text("Interval (ms):")
 		ImGui.SameLine()
@@ -655,6 +716,13 @@ function render_profiling_controls()
 			if num and num >= 100 and num <= 10000 then
 				rewrap_interval_ms = math.floor(num)
 			end
+		end
+		-- Tooltip for Interval input
+		if ImGui.BeginItemTooltip() then
+			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+			ImGui.Text("Time between automatic re-scans in milliseconds.\nRange: 100-10000ms (1-10 seconds).\nHigher values = less CPU overhead but slower detection of new functions.")
+			ImGui.PopTextWrapPos()
+			ImGui.EndTooltip()
 		end
 		ImGui.Spacing()
 	end
@@ -672,10 +740,21 @@ function render_profiling_controls()
 		if profiler_ok then
 			if new_fg_enabled and type(devtools_profiler.enable_flamegraph) == "function" then
 				devtools_profiler.enable_flamegraph()
+				flamegraph_collect_message = "Flamegraph data collection ENABLED"
+				flamegraph_collect_message_time = time_global()
 			elseif (not new_fg_enabled) and type(devtools_profiler.disable_flamegraph) == "function" then
 				devtools_profiler.disable_flamegraph()
+				flamegraph_collect_message = "Flamegraph data collection DISABLED"
+				flamegraph_collect_message_time = time_global()
 			end
 		end
+	end
+	-- Tooltip for Collect Data checkbox
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Enable flamegraph data collection.\nCaptures call stack traces for each function call.\nUseful for visualizing performance bottlenecks.\nExported in .folded format for external tools.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
 	end
 
 	ImGui.SameLine()
@@ -715,6 +794,13 @@ function render_profiling_controls()
 		ImGui.Text("(enable collection first)")
 		ImGui.PopStyleColor(1)
 	end
+	-- Tooltip for Export Flamegraph button
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Export flamegraph data to a .folded file.\nVisualize in tools like FlameGraph.pl, speedscope, or Inferno.\nRequires 'Collect Data' to be enabled first.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 
 	ImGui.Spacing()
 
@@ -725,6 +811,13 @@ function render_profiling_controls()
 	end
 
 	local _, new_auto_start = ImGui.Checkbox("Profile on Load", auto_start)
+	-- Tooltip for Profile on Load
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Automatically start profiling when the game loads.\nSaves current module selection and flamegraph state to _AUTOLOAD_ preset.\nUseful for consistent profiling sessions.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 
 	if new_auto_start ~= auto_start then
 		if profiler_ok then
@@ -759,6 +852,13 @@ function render_profiling_controls()
 	ImGui.SameLine()
 
 	local _, new_hide = ImGui.Checkbox("Hide fast (<0.01ms)", hide_fast_functions)
+	-- Tooltip for Hide fast functions
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Hide functions with average execution time < 0.01ms.\nHelps focus on slower functions that may need optimization.\nFast functions are still being profiled, just hidden from view.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 
 	-- Performance controls
 	ImGui.Spacing()
@@ -773,21 +873,56 @@ function render_profiling_controls()
 	if ImGui.Button("All##rows", vector2(30, 0)) then
 		max_visible_rows = 0
 	end
+	-- Tooltip for All rows button
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Show all functions in the stats table.\nMay impact performance with many functions.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 	ImGui.SameLine(0, 2)
 	if ImGui.Button("50##rows", vector2(25, 0)) then
 		max_visible_rows = 50
+	end
+	-- Tooltip for 50 rows button
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Limit display to top 50 functions.\nBetter performance, focuses on most significant functions.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
 	end
 	ImGui.SameLine(0, 2)
 	if ImGui.Button("100##rows", vector2(30, 0)) then
 		max_visible_rows = 100
 	end
+	-- Tooltip for 100 rows button
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Limit display to top 100 functions (default).\nGood balance between visibility and performance.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 	ImGui.SameLine(0, 2)
 	if ImGui.Button("200##rows", vector2(30, 0)) then
 		max_visible_rows = 200
 	end
+	-- Tooltip for 200 rows button
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Limit display to top 200 functions.\nShows more data but may reduce FPS slightly.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 
 	ImGui.SameLine(0, 15)
 	local _, new_minimal = ImGui.Checkbox("Minimal mode", minimal_mode)
+	-- Tooltip for Minimal mode
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Hide the stats table entirely during profiling.\nMaximum FPS while still collecting data.\nPerfect for flamegraph collection without UI overhead.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 	if new_minimal ~= minimal_mode then
 		minimal_mode = new_minimal
 	end
@@ -799,30 +934,72 @@ function render_profiling_controls()
 	if new_calls ~= show_calls then
 		show_calls = new_calls
 	end
+	-- Tooltip for Calls column
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Number of times the function was called.\nHigher values may indicate hot paths.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 	ImGui.SameLine()
 	local _, new_avg = ImGui.Checkbox("Avg", show_avg)
 	if new_avg ~= show_avg then
 		show_avg = new_avg
+	end
+	-- Tooltip for Avg column
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Average execution time in milliseconds.\nUseful for identifying consistently slow functions.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
 	end
 	ImGui.SameLine()
 	local _, new_median = ImGui.Checkbox("Median", show_median)
 	if new_median ~= show_median then
 		show_median = new_median
 	end
+	-- Tooltip for Median column
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Median execution time in milliseconds.\nLess affected by outliers than average.\nBetter representation of typical performance.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 	ImGui.SameLine()
 	local _, new_min = ImGui.Checkbox("Min", show_min)
 	if new_min ~= show_min then
 		show_min = new_min
+	end
+	-- Tooltip for Min column
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Minimum execution time in milliseconds.\nFastest observed call time.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
 	end
 	ImGui.SameLine()
 	local _, new_max = ImGui.Checkbox("Max", show_max)
 	if new_max ~= show_max then
 		show_max = new_max
 	end
+	-- Tooltip for Max column
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Maximum execution time in milliseconds.\nSlowest observed call time.\nUseful for identifying performance spikes.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
 	ImGui.SameLine()
 	local _, new_total = ImGui.Checkbox("Total", show_total)
 	if new_total ~= show_total then
 		show_total = new_total
+	end
+	-- Tooltip for Total column
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Total execution time in milliseconds.\nSum of all call times.\nHelps identify functions consuming the most time overall.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
 	end
 
 	-- CSV export path display
@@ -846,6 +1023,17 @@ function render_profiling_controls()
 		ImGui.PopStyleColor(1)
 	end
 
+	-- Show flamegraph collection status message
+	if flamegraph_collect_message and (time_global() - flamegraph_collect_message_time) < FLAMEGRAPH_MESSAGE_DURATION then
+		ImGui.Spacing()
+		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+		ImGui.Text(flamegraph_collect_message)
+		ImGui.PopStyleColor(1)
+	else
+		flamegraph_collect_message = nil
+	end
+
+	-- Show flamegraph export path message
 	if last_flamegraph_export_path and (time_global() - last_flamegraph_export_time) < CSV_EXPORT_MESSAGE_DURATION then
 		ImGui.Spacing()
 		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
