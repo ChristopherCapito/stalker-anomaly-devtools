@@ -2,9 +2,16 @@
 =======================================================================================
     DevTools Config - Presets for DevTools Profiler
     
-    Profiling presets are saved to devtools_presets.txt and can be managed through
-    the UI. Select the modules you want to profile, save as a preset, and quickly
-    load it later.
+    Profiling presets are saved to devtools/presets/devtools_presets.txt and can be
+    managed through the UI. Select the modules you want to profile, save as a preset,
+    and quickly load it later.
+    
+    File structure:
+    - devtools/                    (main devtools folder)
+      - presets/                   (preset files)
+        - devtools_presets.txt
+      - devtools_profiler_export.csv
+      - devtools_flamegraph.folded
 =======================================================================================
 --]]
 
@@ -16,18 +23,30 @@ local PRESETS_FILENAME = "devtools_presets.txt"
 local presets_path = nil
 local presets = {}  -- { preset_name = { "module1", "module2", ... }, ... }
 
+-- Get the base devtools directory
+local function get_devtools_dir()
+    local appdata = getFS():update_path("$app_data_root$", "")
+    local base_dir
+    if appdata and appdata ~= "" then
+        base_dir = appdata .. "devtools\\"
+    else
+        base_dir = getFS():update_path("$logs$", "") .. "devtools\\"
+    end
+    return base_dir
+end
+
+-- Get the presets directory
+local function get_presets_dir()
+    local presets_dir = get_devtools_dir() .. "presets\\"
+    return presets_dir
+end
+
 local function get_presets_path()
     if presets_path then
         return presets_path
     end
     
-    local appdata = getFS():update_path("$app_data_root$", "")
-    if appdata and appdata ~= "" then
-        presets_path = appdata .. PRESETS_FILENAME
-    else
-        presets_path = getFS():update_path("$logs$", "") .. PRESETS_FILENAME
-    end
-    
+    presets_path = get_presets_dir() .. PRESETS_FILENAME
     return presets_path
 end
 
@@ -135,16 +154,16 @@ end
 -- Save current selection as a preset
 -- modules can be either:
 --   - Array of module names (old format, backward compatible)
---   - Table with {modules = {...}, flamegraph_enabled = bool} (new format)
+--   - Table with {modules = {...}, flamegraph_enabled = bool, module_colors = {...}} (new format)
 function save_preset(name, modules, flamegraph_enabled)
     if not name or name == "" then return false end
     
-    -- If modules is already a table with modules key, use it as-is
+    -- If modules is already a table with modules key, use it as-is (supports module_colors)
     -- Otherwise, create new format table
     if type(modules) == "table" and modules.modules then
         presets[name] = modules
     else
-        -- New format: store as table with modules and optional flamegraph_enabled
+        -- New format: store as table with modules, optional flamegraph_enabled, and optional module_colors
         presets[name] = {
             modules = modules,
             flamegraph_enabled = flamegraph_enabled or false

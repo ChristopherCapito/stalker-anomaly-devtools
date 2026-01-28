@@ -111,6 +111,7 @@ local sync_module_colors
 local get_module_color_by_name
 local minimal_mode = false -- Hide stats table entirely (for flamegraph collection)
 local high_precision_mode = false -- High precision display mode (default: false for performance)
+local custom_module_colors = {} -- User-defined custom colors (persisted in presets)
 -- Rewrap controls
 local auto_rewrap_enabled = false
 local rewrap_interval_ms = 1000
@@ -142,6 +143,11 @@ local cached_show_total = false
 -- Presets state
 local preset_name_input = ""
 local show_preset_popup = false
+local selected_preset_index = 0 -- Index in preset_names array (0 = none selected)
+
+-- Color picker state
+local color_picker_module = nil -- Module name for which color picker is open
+local color_picker_color = fcolor():set(1, 1, 1, 1) -- Current color being edited
 
 -- CSV export state
 local last_csv_export_path = nil
@@ -298,33 +304,89 @@ function render_module_browser()
 		ImGui.PopStyleColor(1)
 		ImGui.SameLine()
 
-		-- Preset buttons with delete
+		-- Preset selector (dropdown/combo)
 		local preset_names = devtools_profiler.get_preset_names()
-		if #preset_names > 0 then
-			for _, name in ipairs(preset_names) do
-				-- Load button
-				if ImGui.Button(name .. "##preset_load", vector2(0, 0)) then
-					devtools_profiler.load_preset(name)
+		local preset_display_names = {}
+		table.insert(preset_display_names, "(Select preset...)")
+		for _, name in ipairs(preset_names) do
+			table.insert(preset_display_names, name)
+		end
+		
+		-- Adjust selected index if preset list changed
+		if selected_preset_index > #preset_display_names - 1 then
+			selected_preset_index = 0
+		end
+		
+		if ImGui.BeginCombo("##preset_selector", preset_display_names[selected_preset_index + 1] or "(Select preset...)", 0) then
+			for i = 0, #preset_display_names - 1 do
+				local is_selected = (selected_preset_index == i)
+				if ImGui.Selectable(preset_display_names[i + 1], is_selected, 0, vector2(200, 0)) then
+					selected_preset_index = i
+					if i > 0 then
+						-- Load the selected preset (i-1 because index 0 is "Select preset...")
+						local preset_name = preset_names[i]
+						if preset_name then
+							devtools_profiler.load_preset(preset_name)
+							-- Reset selection after loading
+							selected_preset_index = 0
+						end
+					end
 				end
-				ImGui.SameLine(0, 2)
-				-- Delete button (small X)
-				ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.5, 0.2, 0.2, 1))
-				ImGui.PushStyleColor(ImGuiCol.ButtonHovered, fcolor():set(0.8, 0.3, 0.3, 1))
-				if ImGui.Button("x##del_" .. name, vector2(18, 0)) then
-					devtools_profiler.delete_preset(name)
+				if is_selected then
+					ImGui.SetItemDefaultFocus()
 				end
-				ImGui.PopStyleColor(2)
-				ImGui.SameLine(0, 10)
+			end
+			ImGui.EndCombo()
+		end
+		-- Tooltip for preset selector
+		if ImGui.BeginItemTooltip() then
+			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+			ImGui.Text("Select a preset to load.\nPresets save module selection, flamegraph state, and custom colors.")
+			ImGui.PopTextWrapPos()
+			ImGui.EndTooltip()
+		end
+		
+		ImGui.SameLine(0, 10)
+		
+		-- Load button (loads currently selected preset)
+		if selected_preset_index > 0 and selected_preset_index <= #preset_names then
+			if ImGui.Button("Load##preset_load", vector2(60, 0)) then
+				local preset_name = preset_names[selected_preset_index]
+				if preset_name then
+					devtools_profiler.load_preset(preset_name)
+					selected_preset_index = 0
+				end
 			end
 		else
-			ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
-			ImGui.Text("(none)")
+			ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.3, 0.3, 0.3, 1))
+			ImGui.Button("Load##preset_load", vector2(60, 0))
 			ImGui.PopStyleColor(1)
-			ImGui.SameLine()
 		end
+		
+		ImGui.SameLine(0, 5)
+		
+		-- Delete button (deletes currently selected preset)
+		if selected_preset_index > 0 and selected_preset_index <= #preset_names then
+			ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.5, 0.2, 0.2, 1))
+			ImGui.PushStyleColor(ImGuiCol.ButtonHovered, fcolor():set(0.8, 0.3, 0.3, 1))
+			if ImGui.Button("Delete##preset_delete", vector2(60, 0)) then
+				local preset_name = preset_names[selected_preset_index]
+				if preset_name then
+					devtools_profiler.delete_preset(preset_name)
+					selected_preset_index = 0
+				end
+			end
+			ImGui.PopStyleColor(2)
+		else
+			ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.3, 0.3, 0.3, 1))
+			ImGui.Button("Delete##preset_delete", vector2(60, 0))
+			ImGui.PopStyleColor(1)
+		end
+		
+		ImGui.SameLine(0, 10)
 
 		-- Save preset button
-		if ImGui.Button("Save...", vector2(50, 0)) then
+		if ImGui.Button("Save...", vector2(60, 0)) then
 			show_preset_popup = true
 			preset_name_input = ""
 		end
@@ -437,12 +499,87 @@ function render_module_browser()
 				ImGui.PopStyleColor(1)
 			end
 
+			-- Color picker button (only for registered/wrapped modules)
+			if is_registered or is_wrapped then
+				ImGui.SameLine(0, 5)
+				
+				-- Get current color for this module
+				local current_color = get_module_color_by_name(mod_name)
+				local has_custom_color = custom_module_colors[mod_name] ~= nil
+				
+				-- Show color button
+				if ImGui.ColorButton(mod_name .. "##color", current_color, 0, vector2(15, 15)) then
+					-- Open color picker for this module
+					color_picker_module = mod_name
+					color_picker_color = fcolor():set(current_color.r, current_color.g, current_color.b, 1)
+				end
+				
+				-- Tooltip for color button
+				if ImGui.BeginItemTooltip() then
+					ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+					if has_custom_color then
+						ImGui.Text("Click to change custom color for '" .. mod_name .. "'\nRight-click to reset to auto-assigned color")
+					else
+						ImGui.Text("Click to set custom color for '" .. mod_name .. "'")
+					end
+					ImGui.PopTextWrapPos()
+					ImGui.EndTooltip()
+				end
+				
+				-- Right-click to clear custom color
+				if ImGui.IsItemClicked(1) then -- Right mouse button
+					if has_custom_color then
+						clear_module_color(mod_name)
+					end
+				end
+			end
+
 			col = col + 1
 			if col < max_cols then
 				ImGui.SameLine(0, 20)
 			else
 				col = 0
 			end
+		end
+		
+		-- Color picker popup
+		if color_picker_module then
+			ImGui.OpenPopup("ColorPicker##" .. color_picker_module)
+		end
+		
+		if color_picker_module and ImGui.BeginPopup("ColorPicker##" .. color_picker_module, 0) then
+			ImGui.Text("Set color for: " .. color_picker_module)
+			ImGui.Spacing()
+			
+			local changed, new_color = ImGui.ColorPicker3("Color##picker", color_picker_color, 0)
+			if changed then
+				color_picker_color = new_color
+			end
+			
+			ImGui.Spacing()
+			
+			if ImGui.Button("OK", vector2(80, 0)) then
+				set_module_color(color_picker_module, color_picker_color.r, color_picker_color.g, color_picker_color.b)
+				color_picker_module = nil
+				ImGui.CloseCurrentPopup()
+			end
+			
+			ImGui.SameLine()
+			
+			if ImGui.Button("Cancel", vector2(80, 0)) then
+				color_picker_module = nil
+				ImGui.CloseCurrentPopup()
+			end
+			
+			ImGui.SameLine()
+			
+			if ImGui.Button("Reset", vector2(80, 0)) then
+				clear_module_color(color_picker_module)
+				color_picker_module = nil
+				ImGui.CloseCurrentPopup()
+			end
+			
+			ImGui.EndPopup()
 		end
 
 		if col ~= 0 then
@@ -1101,6 +1238,13 @@ function render_stats_table()
 		return
 	end
 
+	-- Check if profiling is currently active
+	local profiler_ok = (devtools_profiler ~= nil)
+	local is_profiling_active = false
+	if profiler_ok and type(devtools_profiler.is_enabled) == "function" then
+		is_profiling_active = devtools_profiler.is_enabled()
+	end
+
 	-- Throttle stats rebuilding for performance
 	local tg = time_global()
 	local display_list
@@ -1207,9 +1351,9 @@ function render_stats_table()
 	
 	-- Get elapsed time if profiling is active
 	local elapsed_text = ""
-	if profiler_ok and type(devtools_profiler.get_elapsed_time_seconds) == "function" then
+	if profiler_ok and is_profiling_active and type(devtools_profiler.get_elapsed_time_seconds) == "function" then
 		local elapsed_sec = devtools_profiler.get_elapsed_time_seconds()
-		if elapsed_sec then
+		if elapsed_sec and elapsed_sec > 0 then
 			elapsed_text = string.format(" (elapsed: %.1fs)", elapsed_sec)
 		end
 	end
@@ -1719,15 +1863,21 @@ end
 -- COLOR HELPERS
 -- ============================================================================
 
-local module_colors = {}
+local module_colors = {} -- Auto-assigned colors (can be overridden)
 local color_index = 0
 
 sync_module_colors = function(wrapped_modules)
+	-- Only auto-assign colors for modules that don't have custom colors
 	module_colors = {}
 	color_index = 0
 	for i, module_name in ipairs(wrapped_modules) do
-		color_index = color_index + 1
-		module_colors[module_name] = get_module_color_by_index(color_index)
+		-- If module has a custom color, use it; otherwise auto-assign
+		if custom_module_colors[module_name] then
+			module_colors[module_name] = custom_module_colors[module_name]
+		else
+			color_index = color_index + 1
+			module_colors[module_name] = get_module_color_by_index(color_index)
+		end
 	end
 end
 
@@ -1737,16 +1887,90 @@ function get_module_color(func_name)
 		return COLOR_WHITE
 	end
 
-	if not module_colors[module_name] then
+	-- Check custom colors first, then auto-assigned, then assign new
+	if custom_module_colors[module_name] then
+		return custom_module_colors[module_name]
+	elseif module_colors[module_name] then
+		return module_colors[module_name]
+	else
 		color_index = color_index + 1
-		module_colors[module_name] = get_module_color_by_index(color_index)
+		local color = get_module_color_by_index(color_index)
+		module_colors[module_name] = color
+		return color
 	end
-
-	return module_colors[module_name]
 end
 
 get_module_color_by_name = function(module_name)
+	-- Check custom colors first, then auto-assigned
+	if custom_module_colors[module_name] then
+		return custom_module_colors[module_name]
+	end
 	return module_colors[module_name] or COLOR_WHITE
+end
+
+-- Set a custom color for a module (r, g, b values 0.0-1.0)
+function set_module_color(module_name, r, g, b)
+	if not module_name or type(module_name) ~= "string" then
+		return false
+	end
+	if not r or not g or not b then
+		return false
+	end
+	custom_module_colors[module_name] = fcolor():set(r, g, b, 1)
+	-- Update current color assignment if module is already wrapped
+	if module_colors[module_name] then
+		module_colors[module_name] = custom_module_colors[module_name]
+	end
+	return true
+end
+
+-- Remove custom color for a module (revert to auto-assigned)
+function clear_module_color(module_name)
+	if custom_module_colors[module_name] then
+		custom_module_colors[module_name] = nil
+		-- Re-sync to get auto-assigned color
+		local wrapped_modules = {}
+		if devtools_profiler and type(devtools_profiler.get_wrapped_modules) == "function" then
+			wrapped_modules = devtools_profiler.get_wrapped_modules() or {}
+		end
+		if #wrapped_modules > 0 then
+			sync_module_colors(wrapped_modules)
+		end
+		return true
+	end
+	return false
+end
+
+-- Get custom color assignments (for saving to presets)
+function get_custom_module_colors()
+	local colors = {}
+	for module_name, color in pairs(custom_module_colors) do
+		-- Convert fcolor to table {r, g, b}
+		colors[module_name] = {color.r, color.g, color.b}
+	end
+	return colors
+end
+
+-- Set custom color assignments (for loading from presets)
+function set_custom_module_colors(colors)
+	if not colors or type(colors) ~= "table" then
+		return false
+	end
+	custom_module_colors = {}
+	for module_name, rgb in pairs(colors) do
+		if type(rgb) == "table" and #rgb >= 3 then
+			custom_module_colors[module_name] = fcolor():set(rgb[1], rgb[2], rgb[3], 1)
+		end
+	end
+	-- Re-sync to apply custom colors
+	local wrapped_modules = {}
+	if devtools_profiler and type(devtools_profiler.get_wrapped_modules) == "function" then
+		wrapped_modules = devtools_profiler.get_wrapped_modules() or {}
+	end
+	if #wrapped_modules > 0 then
+		sync_module_colors(wrapped_modules)
+	end
+	return true
 end
 
 function get_module_color_by_index(index)
@@ -1910,3 +2134,14 @@ function on_actor_update()
 		end
 	end
 end
+
+-- ============================================================================
+-- MODULE EXPORTS (for API access)
+-- ============================================================================
+
+-- Export color management functions for external use
+devtools_imgui = devtools_imgui or {}
+devtools_imgui.set_module_color = set_module_color
+devtools_imgui.clear_module_color = clear_module_color
+devtools_imgui.get_custom_module_colors = get_custom_module_colors
+devtools_imgui.set_custom_module_colors = set_custom_module_colors

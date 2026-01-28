@@ -1388,7 +1388,19 @@ function save_preset(name)
 	if devtools_config then
 		local modules = get_registered_modules()
 		local flamegraph_state = is_flamegraph_enabled()
-		return devtools_config.save_preset(name, modules, flamegraph_state)
+		
+		-- Get custom module colors if devtools_imgui is available
+		local module_colors = nil
+		if devtools_imgui and type(devtools_imgui.get_custom_module_colors) == "function" then
+			module_colors = devtools_imgui.get_custom_module_colors()
+		end
+		
+		-- Save preset with modules, flamegraph state, and colors
+		return devtools_config.save_preset(name, {
+			modules = modules,
+			flamegraph_enabled = flamegraph_state,
+			module_colors = module_colors
+		})
 	end
 	return false
 end
@@ -1401,12 +1413,14 @@ function load_preset(name)
 		if preset_data then
 			local modules
 			local flamegraph_enabled = false
+			local module_colors = nil
 
 			-- Handle backward compatibility: old format is just an array
 			if type(preset_data) == "table" and preset_data.modules then
-				-- New format: table with modules and flamegraph_enabled
+				-- New format: table with modules, flamegraph_enabled, and optional module_colors
 				modules = preset_data.modules
 				flamegraph_enabled = preset_data.flamegraph_enabled or false
+				module_colors = preset_data.module_colors
 			else
 				-- Old format: just an array of module names
 				modules = preset_data
@@ -1419,6 +1433,11 @@ function load_preset(name)
 			-- Register preset modules
 			for _, mod_name in ipairs(modules) do
 				register_module(mod_name)
+			end
+			
+			-- Load custom module colors if available
+			if module_colors and devtools_imgui and type(devtools_imgui.set_custom_module_colors) == "function" then
+				devtools_imgui.set_custom_module_colors(module_colors)
 			end
 
 			-- Return both success and flamegraph state
@@ -1595,12 +1614,15 @@ function export_to_csv(filepath)
 	-- Determine file path
 	local path = filepath
 	if not path or path == "" then
+		-- Use devtools directory for exports
 		local appdata = getFS():update_path("$app_data_root$", "")
+		local devtools_dir
 		if appdata and appdata ~= "" then
-			path = appdata .. "devtools_profiler_export.csv"
+			devtools_dir = appdata .. "devtools\\"
 		else
-			path = getFS():update_path("$logs$", "") .. "devtools_profiler_export.csv"
+			devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
 		end
+		path = devtools_dir .. "devtools_profiler_export.csv"
 	end
 
 	-- Open file for writing
@@ -1651,11 +1673,13 @@ end
 -- Get default CSV export path
 function get_csv_export_path()
 	local appdata = getFS():update_path("$app_data_root$", "")
+	local devtools_dir
 	if appdata and appdata ~= "" then
-		return appdata .. "devtools_profiler_export.csv"
+		devtools_dir = appdata .. "devtools\\"
 	else
-		return getFS():update_path("$logs$", "") .. "devtools_profiler_export.csv"
+		devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
 	end
+	return devtools_dir .. "devtools_profiler_export.csv"
 end
 
 -- ============================================================================
@@ -1695,12 +1719,15 @@ function export_flamegraph(filepath)
 
 	local path = filepath
 	if not path or path == "" then
+		-- Use devtools directory for exports
 		local appdata = getFS():update_path("$app_data_root$", "")
+		local devtools_dir
 		if appdata and appdata ~= "" then
-			path = appdata .. "devtools_flamegraph.folded"
+			devtools_dir = appdata .. "devtools\\"
 		else
-			path = getFS():update_path("$logs$", "") .. "devtools_flamegraph.folded"
+			devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
 		end
+		path = devtools_dir .. "devtools_flamegraph.folded"
 	end
 
 	local file = io.open(path, "w")
@@ -1736,11 +1763,13 @@ end
 
 function get_flamegraph_export_path()
 	local appdata = getFS():update_path("$app_data_root$", "")
+	local devtools_dir
 	if appdata and appdata ~= "" then
-		return appdata .. "devtools_flamegraph.folded"
+		devtools_dir = appdata .. "devtools\\"
 	else
-		return getFS():update_path("$logs$", "") .. "devtools_flamegraph.folded"
+		devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
 	end
+	return devtools_dir .. "devtools_flamegraph.folded"
 end
 
 -- ============================================================================
