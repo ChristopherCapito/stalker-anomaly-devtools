@@ -110,6 +110,7 @@ local show_total = false
 local sync_module_colors
 local get_module_color_by_name
 local minimal_mode = false -- Hide stats table entirely (for flamegraph collection)
+local high_precision_mode = false -- High precision display mode (default: false for performance)
 -- Rewrap controls
 local auto_rewrap_enabled = false
 local rewrap_interval_ms = 1000
@@ -190,7 +191,7 @@ local COLOR_GRAY = fcolor():set(0.5, 0.5, 0.5, 1)
 -- FORMAT HELPERS
 -- ============================================================================
 
--- Compact number formatting (reduces string allocations)
+-- Compact number formatting (reduces string allocations) - DEFAULT for performance
 local function format_compact(ms)
 	if ms >= 100 then
 		return string.format("%.0f", ms)
@@ -199,6 +200,11 @@ local function format_compact(ms)
 	else
 		return string.format("%.2f", ms)
 	end
+end
+
+-- High precision number formatting (6 decimal places) - for detailed analysis
+local function format_precise(ms)
+	return string.format("%.6f", ms)
 end
 
 -- ============================================================================
@@ -927,6 +933,19 @@ function render_profiling_controls()
 		minimal_mode = new_minimal
 	end
 
+	ImGui.SameLine(0, 15)
+	local _, new_precision = ImGui.Checkbox("High precision", high_precision_mode)
+	if new_precision ~= high_precision_mode then
+		high_precision_mode = new_precision
+	end
+	-- Tooltip for High precision
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Display timing values with 6 decimal places.\nDefault mode uses compact formatting (0-2 decimals) for better performance.\nHigh precision may reduce FPS slightly due to increased string formatting overhead.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
+
 	ImGui.Spacing()
 	ImGui.Text("Columns:")
 	ImGui.SameLine()
@@ -1185,14 +1204,25 @@ function render_stats_table()
 	if max_visible_rows > 0 and #display_list > max_visible_rows then
 		limit_text = string.format(" (showing top %d)", max_visible_rows)
 	end
+	
+	-- Get elapsed time if profiling is active
+	local elapsed_text = ""
+	if profiler_ok and type(devtools_profiler.get_elapsed_time_seconds) == "function" then
+		local elapsed_sec = devtools_profiler.get_elapsed_time_seconds()
+		if elapsed_sec then
+			elapsed_text = string.format(" (elapsed: %.1fs)", elapsed_sec)
+		end
+	end
+	
 	ImGui.Text(
 		string.format(
-			"Showing %d/%d functions%s | Total: %.1fms across %d calls",
+			"Showing %d/%d functions%s | Total: %.1fms across %d calls%s",
 			#display_list,
 			cached_total_names,
 			limit_text,
 			total_time,
-			total_calls
+			total_calls,
+			elapsed_text
 		)
 	)
 	ImGui.Spacing()
@@ -1274,7 +1304,7 @@ function render_stats_table()
 			if show_avg then
 				ImGui.TableNextColumn()
 				ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.avg_ms))
-				ImGui.Text(format_compact(s.avg_ms))
+				ImGui.Text(high_precision_mode and format_precise(s.avg_ms) or format_compact(s.avg_ms))
 				ImGui.PopStyleColor(1)
 			end
 
@@ -1282,28 +1312,28 @@ function render_stats_table()
 			if show_median then
 				ImGui.TableNextColumn()
 				ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.median_ms))
-				ImGui.Text(format_compact(s.median_ms))
+				ImGui.Text(high_precision_mode and format_precise(s.median_ms) or format_compact(s.median_ms))
 				ImGui.PopStyleColor(1)
 			end
 
 			-- Min
 			if show_min then
 				ImGui.TableNextColumn()
-				ImGui.Text(format_compact(s.min_ms))
+				ImGui.Text(high_precision_mode and format_precise(s.min_ms) or format_compact(s.min_ms))
 			end
 
 			-- Max (colored by timing)
 			if show_max then
 				ImGui.TableNextColumn()
 				ImGui.PushStyleColor(ImGuiCol.Text, get_timing_color(s.max_ms))
-				ImGui.Text(format_compact(s.max_ms))
+				ImGui.Text(high_precision_mode and format_precise(s.max_ms) or format_compact(s.max_ms))
 				ImGui.PopStyleColor(1)
 			end
 
 			-- Total
 			if show_total then
 				ImGui.TableNextColumn()
-				ImGui.Text(format_compact(s.total_ms))
+				ImGui.Text(high_precision_mode and format_precise(s.total_ms) or format_compact(s.total_ms))
 			end
 		end
 
