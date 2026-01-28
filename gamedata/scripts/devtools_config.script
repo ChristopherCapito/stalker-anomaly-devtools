@@ -132,22 +132,27 @@ end
 
 function save_presets()
     local path = get_presets_path()
+    local presets_dir = get_presets_dir()
+    
+    -- Try to open the file for writing
     local file = io.open(path, "w")
     if not file then
-        if DEVTOOLS_VERBOSE then
-            printf("[DEVTOOLS] Failed to save presets to: " .. tostring(path))
-        end
+        -- File open failed - likely because directory doesn't exist
+        printf("[DEVTOOLS] ERROR: Failed to save presets!")
+        printf("[DEVTOOLS] Path: " .. tostring(path))
+        printf("[DEVTOOLS] Directory: " .. tostring(presets_dir))
+        printf("[DEVTOOLS] Please create the directory manually:")
+        printf("[DEVTOOLS]   " .. tostring(presets_dir))
         return false
     end
     
+    local serialized = serialize_value(presets)
     file:write("-- DevTools Profiling Presets\n")
     file:write("-- Saved module selections for quick profiling setup\n\n")
-    file:write("return " .. serialize_value(presets))
+    file:write("return " .. serialized)
     file:close()
 
-    if DEVTOOLS_VERBOSE then
-        printf("[DEVTOOLS] Presets saved to: " .. tostring(path))
-    end
+    printf("[DEVTOOLS] Presets saved successfully to: " .. tostring(path))
     return true
 end
 
@@ -156,7 +161,10 @@ end
 --   - Array of module names (old format, backward compatible)
 --   - Table with {modules = {...}, flamegraph_enabled = bool, module_colors = {...}} (new format)
 function save_preset(name, modules, flamegraph_enabled)
-    if not name or name == "" then return false end
+    if not name or name == "" then 
+        printf("[DEVTOOLS] ERROR: Cannot save preset with empty name")
+        return false 
+    end
     
     -- If modules is already a table with modules key, use it as-is (supports module_colors)
     -- Otherwise, create new format table
@@ -169,7 +177,15 @@ function save_preset(name, modules, flamegraph_enabled)
             flamegraph_enabled = flamegraph_enabled or false
         }
     end
-    save_presets()
+    
+    local success = save_presets()
+    if not success then
+        printf("[DEVTOOLS] ERROR: Failed to save preset '" .. tostring(name) .. "' to file")
+        -- Remove from memory if file save failed
+        presets[name] = nil
+        return false
+    end
+    
     return true
 end
 
@@ -217,6 +233,11 @@ end
 -- Get presets file path (for display)
 function get_presets_file_path()
     return get_presets_path()
+end
+
+-- Get presets directory path (for display/help)
+function get_presets_directory_path()
+    return get_presets_dir()
 end
 
 -- ============================================================================

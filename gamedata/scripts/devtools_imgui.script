@@ -144,6 +144,8 @@ local cached_show_total = false
 local preset_name_input = ""
 local show_preset_popup = false
 local selected_preset_index = 0 -- Index in preset_names array (0 = none selected)
+local preset_save_message = nil -- Success/error message after saving
+local preset_save_message_time = 0 -- When the message was shown
 
 -- Color picker state
 local color_picker_module = nil -- Module name for which color picker is open
@@ -346,7 +348,8 @@ function render_module_browser()
 			ImGui.EndTooltip()
 		end
 		
-		ImGui.SameLine(0, 10)
+		-- New line: Load, Delete, Save, Name input
+		ImGui.Spacing()
 		
 		-- Load button (loads currently selected preset)
 		if selected_preset_index > 0 and selected_preset_index <= #preset_names then
@@ -386,31 +389,45 @@ function render_module_browser()
 		ImGui.SameLine(0, 10)
 
 		-- Save preset button
-		if ImGui.Button("Save...", vector2(60, 0)) then
-			show_preset_popup = true
-			preset_name_input = ""
-		end
-
-		-- Save preset popup (inline)
-		if show_preset_popup then
-			ImGui.SameLine()
-			ImGui.Text("Name:")
-			ImGui.SameLine()
-			local new_name, name_changed = ImGui.InputText("##preset_name", preset_name_input, 30)
-			if name_changed then
-				preset_name_input = new_name
-			end
-			ImGui.SameLine()
-			if ImGui.Button("OK##save_preset", vector2(30, 0)) then
-				if preset_name_input ~= "" then
-					devtools_profiler.save_preset(preset_name_input)
-					show_preset_popup = false
+		if ImGui.Button("Save##preset_save", vector2(60, 0)) then
+			if preset_name_input ~= "" then
+				local success = devtools_profiler.save_preset(preset_name_input)
+				if success then
+					preset_save_message = "Preset '" .. preset_name_input .. "' saved!"
+					preset_save_message_time = time_global()
+					preset_name_input = "" -- Clear input after successful save
+				else
+					preset_save_message = "ERROR: Failed to save. Check console."
+					preset_save_message_time = time_global()
 				end
+			else
+				preset_save_message = "Please enter a preset name"
+				preset_save_message_time = time_global()
 			end
-			ImGui.SameLine()
-			if ImGui.Button("Cancel##cancel_preset", vector2(50, 0)) then
-				show_preset_popup = false
+		end
+		
+		ImGui.SameLine(0, 10)
+		
+		-- Name input field (always visible)
+		ImGui.Text("Name:")
+		ImGui.SameLine()
+		local new_name, name_changed = ImGui.InputText("##preset_name", preset_name_input, 30)
+		if name_changed then
+			preset_name_input = new_name
+		end
+		
+		-- Show save message if present
+		if preset_save_message and (time_global() - preset_save_message_time) < 5000 then
+			ImGui.SameLine(0, 10)
+			local color = fcolor():set(0.4, 1, 0.4, 1) -- Green for success
+			if preset_save_message:match("ERROR") or preset_save_message:match("Please enter") then
+				color = fcolor():set(1, 0.4, 0.4, 1) -- Red for error
 			end
+			ImGui.PushStyleColor(ImGuiCol.Text, color)
+			ImGui.Text(preset_save_message)
+			ImGui.PopStyleColor(1)
+		elseif preset_save_message then
+			preset_save_message = nil -- Clear message after 5 seconds
 		end
 
 		ImGui.Spacing()
