@@ -1,0 +1,214 @@
+--[[
+=======================================================================================
+    DevTools Profiler - Export Module
+    
+    Handles CSV export and flamegraph data collection/export.
+    
+    Depends on:
+    - devtools_profiler_state (shared state)
+    - devtools_profiler_stats (statistics access)
+=======================================================================================
+--]]
+
+-- Reference to shared state
+local S = devtools_profiler_state
+
+-- Reference to stats module
+local Stats = devtools_profiler_stats
+
+-- ============================================================================
+-- CSV EXPORT
+-- ============================================================================
+
+-- Escape CSV field (handles commas, quotes, newlines)
+local function escape_csv_field(field)
+	local str = tostring(field)
+	if string.find(str, '[,"\n\r]') then
+		str = string.gsub(str, '"', '""')
+		return '"' .. str .. '"'
+	end
+	return str
+end
+
+-- Export all statistics to CSV file
+function export_to_csv(filepath)
+	local all_stats = Stats.get_all_stats()
+	local names = Stats.get_tracked_functions()
+
+	if #names == 0 then
+		printf("[DEVTOOLS] No statistics to export")
+		return false
+	end
+
+	local path = filepath
+	if not path or path == "" then
+		local appdata = getFS():update_path("$app_data_root$", "")
+		local devtools_dir
+		if appdata and appdata ~= "" then
+			devtools_dir = appdata .. "devtools\\"
+		else
+			devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
+		end
+		path = devtools_dir .. "devtools_profiler_export.csv"
+	end
+
+	local file = io.open(path, "w")
+	if not file then
+		printf("[DEVTOOLS] Failed to open file for CSV export: " .. tostring(path))
+		return false
+	end
+
+	file:write("Function,Call Count,Avg (ms),Median (ms),Min (ms),Max (ms),Total (ms),Last (ms)\n")
+
+	table.sort(names, function(a, b)
+		local stats_a = all_stats[a]
+		local stats_b = all_stats[b]
+		if stats_a and stats_b then
+			return stats_a.total_ms > stats_b.total_ms
+		end
+		return a < b
+	end)
+
+	for _, name in ipairs(names) do
+		local s = all_stats[name]
+		if s then
+			file:write(
+				string.format(
+					"%s,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+					escape_csv_field(name),
+					s.call_count,
+					s.avg_ms,
+					s.median_ms,
+					s.min_ms == math.huge and 0 or s.min_ms,
+					s.max_ms,
+					s.total_ms,
+					s.last_ms
+				)
+			)
+		end
+	end
+
+	file:close()
+	printf("[DEVTOOLS] CSV export saved to: " .. tostring(path) .. " (" .. tostring(#names) .. " functions)")
+	return true, path
+end
+
+-- Get default CSV export path
+function get_csv_export_path()
+	local appdata = getFS():update_path("$app_data_root$", "")
+	local devtools_dir
+	if appdata and appdata ~= "" then
+		devtools_dir = appdata .. "devtools\\"
+	else
+		devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
+	end
+	return devtools_dir .. "devtools_profiler_export.csv"
+end
+
+-- ============================================================================
+-- FLAMEGRAPH
+-- ============================================================================
+
+function enable_flamegraph()
+	S.flamegraph_enabled = true
+	S.flamegraph_samples = {}
+	S.flamegraph_total_samples = 0
+	printf("[DEVTOOLS] Flamegraph data collection ENABLED")
+end
+
+function disable_flamegraph()
+	S.flamegraph_enabled = false
+	printf("[DEVTOOLS] Flamegraph data collection DISABLED")
+end
+
+function is_flamegraph_enabled()
+	return S.flamegraph_enabled
+end
+
+function get_flamegraph_sample_count()
+	return S.flamegraph_total_samples
+end
+
+function reset_flamegraph()
+	S.flamegraph_samples = {}
+	S.flamegraph_total_samples = 0
+end
+
+function export_flamegraph(filepath)
+	if not S.flamegraph_enabled or S.flamegraph_total_samples == 0 then
+		printf("[DEVTOOLS] No flamegraph data to export (enable flamegraph collection first)")
+		return false
+	end
+
+	local path = filepath
+	if not path or path == "" then
+		local appdata = getFS():update_path("$app_data_root$", "")
+		local devtools_dir
+		if appdata and appdata ~= "" then
+			devtools_dir = appdata .. "devtools\\"
+		else
+			devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
+		end
+		path = devtools_dir .. "devtools_flamegraph.folded"
+	end
+
+	local file = io.open(path, "w")
+	if not file then
+		printf("[DEVTOOLS] Failed to open file for flamegraph export: " .. tostring(path))
+		return false
+	end
+
+	local sorted_stacks = {}
+	for stack_key, time_ms in pairs(S.flamegraph_samples) do
+		table.insert(sorted_stacks, { key = stack_key, time = time_ms })
+	end
+	table.sort(sorted_stacks, function(a, b)
+		return a.key < b.key
+	end)
+
+	for _, entry in ipairs(sorted_stacks) do
+		local time_us = math.floor(entry.time * 1000)
+		file:write(string.format("%s %d\n", entry.key, time_us))
+	end
+
+	file:close()
+	printf(
+		"[DEVTOOLS] Flamegraph exported to: %s (%s unique stacks, %s total samples)",
+		path,
+		tostring(#sorted_stacks),
+		tostring(S.flamegraph_total_samples)
+	)
+	return true, path
+end
+
+function get_flamegraph_export_path()
+	local appdata = getFS():update_path("$app_data_root$", "")
+	local devtools_dir
+	if appdata and appdata ~= "" then
+		devtools_dir = appdata .. "devtools\\"
+	else
+		devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
+	end
+	return devtools_dir .. "devtools_flamegraph.folded"
+end
+
+-- ============================================================================
+-- MODULE EXPORTS
+-- ============================================================================
+
+devtools_profiler_export = devtools_profiler_export or {}
+local M = devtools_profiler_export
+
+-- CSV
+M.export_to_csv = export_to_csv
+M.get_csv_export_path = get_csv_export_path
+M.escape_csv_field = escape_csv_field
+
+-- Flamegraph
+M.enable_flamegraph = enable_flamegraph
+M.disable_flamegraph = disable_flamegraph
+M.is_flamegraph_enabled = is_flamegraph_enabled
+M.get_flamegraph_sample_count = get_flamegraph_sample_count
+M.reset_flamegraph = reset_flamegraph
+M.export_flamegraph = export_flamegraph
+M.get_flamegraph_export_path = get_flamegraph_export_path
