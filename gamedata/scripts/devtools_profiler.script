@@ -154,9 +154,17 @@ local function init_stats(name)
 			max_ms = 0,
 			last_ms = 0,
 			samples = {},
+			self_total_ms = 0, -- Time spent in function itself (exclude children)
+			self_samples = {},
+			self_min_ms = math.huge, -- Minimum self time observed
+			self_max_ms = 0, -- Maximum self time observed
+			self_last_ms = 0, -- Last self time observed
 		}
 	end
 end
+
+-- Child time tracking stack (for self-time calculation)
+local _child_time_stack = {}
 
 local function compute_median(samples)
 	if not samples or #samples == 0 then
@@ -206,7 +214,7 @@ function start_timer(name)
 end
 
 -- End timing and record the duration
-function end_timer(name)
+function end_timer(name, child_time_ms)
 	if not ENABLED then
 		return 0
 	end
@@ -255,7 +263,25 @@ function end_timer(name)
 		table.remove(s.samples, 1)
 	end
 
-	return duration_ms
+	-- Self time calculation
+	local self_time = duration_ms
+	if child_time_ms and child_time_ms > 0 and child_time_ms < duration_ms then
+		self_time = duration_ms - child_time_ms
+	end
+	s.self_total_ms = (s.self_total_ms or 0) + self_time
+	s.self_last_ms = self_time
+	if self_time < (s.self_min_ms or math.huge) then
+		s.self_min_ms = self_time
+	end
+	if self_time > (s.self_max_ms or 0) then
+		s.self_max_ms = self_time
+	end
+	table.insert(s.self_samples, self_time)
+	if #s.self_samples > MAX_SAMPLES then
+		table.remove(s.self_samples, 1)
+	end
+
+	return duration_ms, self_time
 end
 
 -- Note: get_elapsed() is not supported with profile_timer
@@ -298,6 +324,12 @@ function get_stats(name)
 	end
 	local median_ms = compute_median(s.samples)
 
+	local self_avg_ms = 0
+	if s.call_count > 0 and s.self_total_ms then
+		self_avg_ms = s.self_total_ms / s.call_count
+	end
+	local self_median_ms = compute_median(s.self_samples)
+
 	return {
 		call_count = s.call_count,
 		total_ms = s.total_ms,
@@ -307,6 +339,13 @@ function get_stats(name)
 		max_ms = s.max_ms,
 		last_ms = s.last_ms,
 		samples = s.samples,
+		self_total_ms = s.self_total_ms or 0,
+		self_avg_ms = self_avg_ms,
+		self_median_ms = self_median_ms,
+		self_min_ms = (s.self_min_ms == math.huge or s.self_min_ms == nil) and 0 or s.self_min_ms,
+		self_max_ms = s.self_max_ms or 0,
+		self_last_ms = s.self_last_ms or 0,
+		self_samples = s.self_samples,
 	}
 end
 
@@ -338,6 +377,7 @@ end
 function reset_all()
 	stats = {}
 	timer_stacks = {}
+	_child_time_stack = {}
 	reset_flamegraph()
 end
 
@@ -544,12 +584,26 @@ local function wrap_function(module_name, func_name, original_func)
 		-- Start timing
 		start_timer(full_name)
 
+		-- Initialize child time tracking for this stack depth
+		local my_stack_depth = #active_call_stack
+		_child_time_stack[my_stack_depth] = 0
+
 		-- Execute function directly (let errors propagate naturally)
 		-- Use xpcall pattern to ensure end_timer is called even on error
 		local results = { pcall(original_func, ...) }
 		local success = results[1]
 
-		local duration_ms = end_timer(full_name)
+		-- Get accumulated child time for this function
+		local child_time_ms = _child_time_stack[my_stack_depth] or 0
+		_child_time_stack[my_stack_depth] = nil
+
+		local duration_ms, self_time_ms = end_timer(full_name, child_time_ms)
+
+		-- Propagate our total duration to parent's child time
+		if my_stack_depth > 1 then
+			local parent_depth = my_stack_depth - 1
+			_child_time_stack[parent_depth] = (_child_time_stack[parent_depth] or 0) + duration_ms
+		end
 
 		if flamegraph_enabled and ENABLED and duration_ms then
 			local stack_trace = {}

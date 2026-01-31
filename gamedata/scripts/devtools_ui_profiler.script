@@ -26,6 +26,11 @@ local show_median = true
 local show_min = false
 local show_max = false
 local show_total = false
+local show_self_total = false
+local show_self_avg = false
+local show_self_median = false
+local show_self_min = false
+local show_self_max = false
 
 local minimal_mode = false -- Hide stats table entirely (for flamegraph collection)
 local high_precision_mode = false -- High precision display mode
@@ -57,6 +62,11 @@ local cached_show_median = true
 local cached_show_min = false
 local cached_show_max = false
 local cached_show_total = false
+local cached_show_self_total = false
+local cached_show_self_avg = false
+local cached_show_self_median = false
+local cached_show_self_min = false
+local cached_show_self_max = false
 
 -- Presets state
 local preset_name_input = ""
@@ -887,6 +897,36 @@ function render_profiling_controls()
 		show_total = new_total
 	end
 
+	ImGui.SameLine()
+	local _, new_self_total = ImGui.Checkbox("Self Total", show_self_total)
+	if new_self_total ~= show_self_total then
+		show_self_total = new_self_total
+	end
+
+	ImGui.SameLine()
+	local _, new_self_avg = ImGui.Checkbox("Self Avg", show_self_avg)
+	if new_self_avg ~= show_self_avg then
+		show_self_avg = new_self_avg
+	end
+
+	ImGui.SameLine()
+	local _, new_self_median = ImGui.Checkbox("Self Median", show_self_median)
+	if new_self_median ~= show_self_median then
+		show_self_median = new_self_median
+	end
+
+	ImGui.SameLine()
+	local _, new_self_min = ImGui.Checkbox("Self Min", show_self_min)
+	if new_self_min ~= show_self_min then
+		show_self_min = new_self_min
+	end
+
+	ImGui.SameLine()
+	local _, new_self_max = ImGui.Checkbox("Self Max", show_self_max)
+	if new_self_max ~= show_self_max then
+		show_self_max = new_self_max
+	end
+
 	-- CSV export path display
 	if last_csv_export_path and (time_global() - last_csv_export_time) < CSV_EXPORT_MESSAGE_DURATION then
 		ImGui.Spacing()
@@ -989,6 +1029,11 @@ function render_stats_table()
 		or (show_min ~= cached_show_min)
 		or (show_max ~= cached_show_max)
 		or (show_total ~= cached_show_total)
+		or (show_self_total ~= cached_show_self_total)
+		or (show_self_avg ~= cached_show_self_avg)
+		or (show_self_median ~= cached_show_self_median)
+		or (show_self_min ~= cached_show_self_min)
+		or (show_self_max ~= cached_show_self_max)
 
 	if settings_changed or (tg - last_stats_update > STATS_UPDATE_INTERVAL) then
 		local all_stats = devtools_profiler.get_all_stats()
@@ -1021,6 +1066,11 @@ function render_stats_table()
 		if show_min then table.insert(columns, { name = "Min (ms)", width = 65, key = "min_ms" }) end
 		if show_max then table.insert(columns, { name = "Max (ms)", width = 65, key = "max_ms" }) end
 		if show_total then table.insert(columns, { name = "Total (ms)", width = 75, key = "total_ms" }) end
+		if show_self_total then table.insert(columns, { name = "Self Total (ms)", width = 85, key = "self_total_ms" }) end
+		if show_self_avg then table.insert(columns, { name = "Self Avg (ms)", width = 75, key = "self_avg_ms" }) end
+		if show_self_median then table.insert(columns, { name = "Self Median (ms)", width = 85, key = "self_median_ms" }) end
+		if show_self_min then table.insert(columns, { name = "Self Min (ms)", width = 75, key = "self_min_ms" }) end
+		if show_self_max then table.insert(columns, { name = "Self Max (ms)", width = 75, key = "self_max_ms" }) end
 
 		if sort_column > #columns then
 			sort_column = 1
@@ -1056,6 +1106,11 @@ function render_stats_table()
 		cached_show_min = show_min
 		cached_show_max = show_max
 		cached_show_total = show_total
+		cached_show_self_total = show_self_total
+		cached_show_self_avg = show_self_avg
+		cached_show_self_median = show_self_median
+		cached_show_self_min = show_self_min
+		cached_show_self_max = show_self_max
 		last_stats_update = tg
 	else
 		display_list = cached_stats_display
@@ -1114,6 +1169,11 @@ function render_stats_table()
 	if show_min then table.insert(columns, { name = "Min (ms)", width = 65 }) end
 	if show_max then table.insert(columns, { name = "Max (ms)", width = 65 }) end
 	if show_total then table.insert(columns, { name = "Total (ms)", width = 75 }) end
+	if show_self_total then table.insert(columns, { name = "Self Total (ms)", width = 85 }) end
+	if show_self_avg then table.insert(columns, { name = "Self Avg (ms)", width = 75 }) end
+	if show_self_median then table.insert(columns, { name = "Self Median (ms)", width = 85 }) end
+	if show_self_min then table.insert(columns, { name = "Self Min (ms)", width = 75 }) end
+	if show_self_max then table.insert(columns, { name = "Self Max (ms)", width = 75 }) end
 
 	local col_count = #columns
 
@@ -1199,14 +1259,50 @@ function render_stats_table()
 				ImGui.PopStyleColor(1)
 			end
 
-			-- Total
-			if show_total then
-				ImGui.TableNextColumn()
-				ImGui.Text(high_precision_mode and U.format_precise(s.total_ms) or U.format_compact(s.total_ms))
-			end
+		-- Total
+		if show_total then
+			ImGui.TableNextColumn()
+			ImGui.Text(high_precision_mode and U.format_precise(s.total_ms) or U.format_compact(s.total_ms))
 		end
 
-		ImGui.EndTable()
+		-- Self Total
+		if show_self_total then
+			ImGui.TableNextColumn()
+			ImGui.Text(high_precision_mode and U.format_precise(s.self_total_ms) or U.format_compact(s.self_total_ms))
+		end
+
+		-- Self Avg (colored by timing)
+		if show_self_avg then
+			ImGui.TableNextColumn()
+			ImGui.PushStyleColor(ImGuiCol.Text, U.get_timing_color(s.self_avg_ms))
+			ImGui.Text(high_precision_mode and U.format_precise(s.self_avg_ms) or U.format_compact(s.self_avg_ms))
+			ImGui.PopStyleColor(1)
+		end
+
+		-- Self Median (colored by timing)
+		if show_self_median then
+			ImGui.TableNextColumn()
+			ImGui.PushStyleColor(ImGuiCol.Text, U.get_timing_color(s.self_median_ms))
+			ImGui.Text(high_precision_mode and U.format_precise(s.self_median_ms) or U.format_compact(s.self_median_ms))
+			ImGui.PopStyleColor(1)
+		end
+
+		-- Self Min
+		if show_self_min then
+			ImGui.TableNextColumn()
+			ImGui.Text(high_precision_mode and U.format_precise(s.self_min_ms) or U.format_compact(s.self_min_ms))
+		end
+
+		-- Self Max (colored by timing)
+		if show_self_max then
+			ImGui.TableNextColumn()
+			ImGui.PushStyleColor(ImGuiCol.Text, U.get_timing_color(s.self_max_ms))
+			ImGui.Text(high_precision_mode and U.format_precise(s.self_max_ms) or U.format_compact(s.self_max_ms))
+			ImGui.PopStyleColor(1)
+		end
+	end
+
+	ImGui.EndTable()
 	end
 end
 

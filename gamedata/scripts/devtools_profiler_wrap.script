@@ -58,11 +58,31 @@ local function wrap_function(module_name, func_name, original_func)
 		-- Start timing
 		Stats.start_timer(full_name)
 
+		-- Track child time for self_time_ms
+		local child_time_ms = 0
+		local parent = S.active_call_stack[#S.active_call_stack - (callback_name and 1 or 0) - 1]
+		if parent then
+			S._child_time_stack = S._child_time_stack or {}
+			S._child_time_stack[#S.active_call_stack] = 0
+		end
+
 		-- Execute function directly
 		local results = { pcall(original_func, ...) }
 		local success = results[1]
 
-		local duration_ms = Stats.end_timer(full_name)
+		-- Get child time (if any)
+		if S._child_time_stack then
+			child_time_ms = S._child_time_stack[#S.active_call_stack] or 0
+			S._child_time_stack[#S.active_call_stack] = nil
+		end
+
+		local duration_ms, self_time_ms = Stats.end_timer(full_name, child_time_ms)
+
+		-- Propagate child time up the stack
+		if S._child_time_stack and #S.active_call_stack > 1 then
+			local parent_idx = #S.active_call_stack - 1
+			S._child_time_stack[parent_idx] = (S._child_time_stack[parent_idx] or 0) + duration_ms
+		end
 
 		if S.flamegraph_enabled and S.ENABLED and duration_ms then
 			local stack_trace = {}

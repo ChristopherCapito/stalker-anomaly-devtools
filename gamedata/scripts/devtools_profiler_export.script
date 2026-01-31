@@ -58,7 +58,7 @@ function export_to_csv(filepath)
 		return false
 	end
 
-	file:write("Function,Call Count,Avg (ms),Median (ms),Min (ms),Max (ms),Total (ms),Last (ms)\n")
+	file:write("Function,Call Count,Avg (ms),Median (ms),Min (ms),Max (ms),Total (ms),Last (ms),Self Total (ms),Self Avg (ms),Self Median (ms),Self Min (ms),Self Max (ms)\n")
 
 	table.sort(names, function(a, b)
 		local stats_a = all_stats[a]
@@ -74,7 +74,7 @@ function export_to_csv(filepath)
 		if s then
 			file:write(
 				string.format(
-					"%s,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+					"%s,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
 					escape_csv_field(name),
 					s.call_count,
 					s.avg_ms,
@@ -82,7 +82,12 @@ function export_to_csv(filepath)
 					s.min_ms == math.huge and 0 or s.min_ms,
 					s.max_ms,
 					s.total_ms,
-					s.last_ms
+					s.last_ms,
+					s.self_total_ms or 0,
+					s.self_avg_ms or 0,
+					s.self_median_ms or 0,
+					s.self_min_ms == math.huge and 0 or s.self_min_ms,
+					s.self_max_ms or 0
 				)
 			)
 		end

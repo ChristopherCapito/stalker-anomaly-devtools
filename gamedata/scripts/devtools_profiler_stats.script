@@ -26,6 +26,11 @@ local function init_stats(name)
 			max_ms = 0,
 			last_ms = 0,
 			samples = {},
+			self_total_ms = 0, -- Time spent in function itself (exclude children)
+			self_samples = {},
+			self_min_ms = math.huge, -- Minimum self time observed
+			self_max_ms = 0, -- Maximum self time observed
+			self_last_ms = 0, -- Last self time observed
 		}
 	end
 end
@@ -78,7 +83,7 @@ function start_timer(name)
 end
 
 -- End timing and record the duration
-function end_timer(name)
+function end_timer(name, child_time_ms)
 	if not S.ENABLED then
 		return 0
 	end
@@ -127,7 +132,25 @@ function end_timer(name)
 		table.remove(s.samples, 1)
 	end
 
-	return duration_ms
+	-- Self time calculation
+	local self_time = duration_ms
+	if child_time_ms and child_time_ms > 0 and child_time_ms < duration_ms then
+		self_time = duration_ms - child_time_ms
+	end
+	s.self_total_ms = (s.self_total_ms or 0) + self_time
+	s.self_last_ms = self_time
+	if self_time < s.self_min_ms then
+		s.self_min_ms = self_time
+	end
+	if self_time > s.self_max_ms then
+		s.self_max_ms = self_time
+	end
+	table.insert(s.self_samples, self_time)
+	if #s.self_samples > S.MAX_SAMPLES then
+		table.remove(s.self_samples, 1)
+	end
+
+	return duration_ms, self_time
 end
 
 -- ============================================================================
@@ -167,6 +190,12 @@ function get_stats(name)
 	end
 	local median_ms = compute_median(s.samples)
 
+	local self_avg_ms = 0
+	if s.call_count > 0 and s.self_total_ms then
+		self_avg_ms = s.self_total_ms / s.call_count
+	end
+	local self_median_ms = compute_median(s.self_samples)
+
 	return {
 		call_count = s.call_count,
 		total_ms = s.total_ms,
@@ -176,6 +205,13 @@ function get_stats(name)
 		max_ms = s.max_ms,
 		last_ms = s.last_ms,
 		samples = s.samples,
+		self_total_ms = s.self_total_ms or 0,
+		self_avg_ms = self_avg_ms,
+		self_median_ms = self_median_ms,
+		self_min_ms = s.self_min_ms == math.huge and 0 or s.self_min_ms,
+		self_max_ms = s.self_max_ms or 0,
+		self_last_ms = s.self_last_ms or 0,
+		self_samples = s.self_samples,
 	}
 end
 

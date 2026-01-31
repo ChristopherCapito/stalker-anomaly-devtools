@@ -46,6 +46,9 @@ U.COLOR_GRAY = fcolor():set(0.5, 0.5, 0.5, 1)
 
 -- Compact number formatting (reduces string allocations) - DEFAULT for performance
 function U.format_compact(ms)
+	if ms == nil then
+		return "N/A"
+	end
 	if ms >= 100 then
 		return string.format("%.0f", ms)
 	elseif ms >= 10 then
@@ -57,6 +60,9 @@ end
 
 -- High precision number formatting (6 decimal places) - for detailed analysis
 function U.format_precise(ms)
+	if ms == nil then
+		return "N/A"
+	end
 	return string.format("%.6f", ms)
 end
 
@@ -180,7 +186,9 @@ function U.set_custom_module_colors(colors)
 end
 
 function U.get_timing_color(ms)
-	if ms < 1 then
+	if not ms then
+		return U.TIMING_COLOR_RED
+	elseif ms < 1 then
 		return U.TIMING_COLOR_GREEN
 	elseif ms < 5 then
 		return U.TIMING_COLOR_YELLOW
