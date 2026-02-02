@@ -31,6 +31,9 @@ local function init_stats(name)
 			self_min_ms = math.huge, -- Minimum self time observed
 			self_max_ms = 0, -- Maximum self time observed
 			self_last_ms = 0, -- Last self time observed
+			-- Parent tracking
+			parent_counts = {}, -- { [parent_name] = call_count }
+			most_common_parent = nil, -- String: name of most frequent caller
 		}
 	end
 end
@@ -50,6 +53,35 @@ local function compute_median(samples)
 		return sorted[mid]
 	end
 	return (sorted[mid] + sorted[mid + 1]) / 2
+end
+
+-- ============================================================================
+-- PARENT TRACKING
+-- ============================================================================
+
+-- Track a parent function call relationship
+function track_parent_call(func_name, parent_name)
+	if not func_name or not parent_name then
+		return
+	end
+	if func_name == parent_name then
+		return -- Don't track self-calls as parent relationships
+	end
+
+	init_stats(func_name)
+	local s = S.stats[func_name]
+
+	-- Increment count for this parent
+	s.parent_counts[parent_name] = (s.parent_counts[parent_name] or 0) + 1
+
+	-- Update most common parent
+	local max_count = 0
+	for pname, count in pairs(s.parent_counts) do
+		if count > max_count then
+			max_count = count
+			s.most_common_parent = pname
+		end
+	end
 end
 
 -- ============================================================================
@@ -212,6 +244,9 @@ function get_stats(name)
 		self_max_ms = s.self_max_ms or 0,
 		self_last_ms = s.self_last_ms or 0,
 		self_samples = s.self_samples,
+		-- Parent tracking data
+		most_common_parent = s.most_common_parent or "",
+		parent_counts = s.parent_counts or {},
 	}
 end
 
@@ -296,3 +331,6 @@ M.reset_stats = reset_stats
 M.reset_all = reset_all
 M.get_safety_stats = get_safety_stats
 M.reset_safety_stats = reset_safety_stats
+
+-- Parent tracking API
+M.track_parent_call = track_parent_call

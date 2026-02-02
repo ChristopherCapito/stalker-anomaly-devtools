@@ -105,29 +105,37 @@ for _, name in ipairs(BLACKLIST_CONFIG.functions) do
 end
 
 -- ============================================================================
--- INTERNAL STATE
+-- SHARED STATE REFERENCE
+-- Use devtools_profiler_state for all shared state to ensure consistency
+-- across the modular profiler components
 -- ============================================================================
 
-local timer_stacks = {} -- Per-function timer stacks for nested call handling
-local stats = {} -- Statistics per function
+local S = devtools_profiler_state
 
--- Module management
+-- Local references to shared state tables (for backward compatibility)
+local timer_stacks = S.timer_stacks -- Per-function timer stacks for nested call handling
+local stats = S.stats -- Statistics per function
+
+-- Module management (local to this module)
 local registered_modules = {} -- Modules registered for profiling: {name = true}
 local wrapped_modules = {} -- Stores original functions per module
 local wrapped_function_count = 0
 
--- Call stack tracking for depth limiting
-local active_call_stack = {} -- Stack of currently executing profiled functions
-local MAX_CALL_DEPTH = 100 -- Maximum call depth to prevent stack overflow
-local safety_stats = { -- Safety statistics for debugging
-	skipped_depth = 0, -- Calls skipped due to depth limit
-	blacklist_violations = 0, -- Runtime blacklist hits
-}
+-- Call stack tracking for depth limiting (now from shared state)
+local active_call_stack = S.active_call_stack -- Stack of currently executing profiled functions
+local MAX_CALL_DEPTH = S.MAX_CALL_DEPTH -- Maximum call depth to prevent stack overflow
+local safety_stats = S.safety_stats -- Safety statistics for debugging
 
--- Flamegraph data collection
-local flamegraph_enabled = FLAMEGRAPH_ENABLED
-local flamegraph_samples = {} -- { "stack;trace" = total_ms, ... }
-local flamegraph_total_samples = 0
+-- Flamegraph data collection (now from shared state)
+local flamegraph_enabled = S.flamegraph_enabled
+local flamegraph_samples = S.flamegraph_samples -- { "stack;trace" = total_ms, ... }
+local flamegraph_total_samples = S.flamegraph_total_samples or 0
+
+-- Ensure flamegraph_total_samples is tracked in shared state
+S.flamegraph_total_samples = S.flamegraph_total_samples or 0
+
+-- Child time tracking stack (for self-time calculation)
+local _child_time_stack = {}
 
 -- ============================================================================
 -- HIGH-PRECISION TIMING
@@ -159,12 +167,14 @@ local function init_stats(name)
 			self_min_ms = math.huge, -- Minimum self time observed
 			self_max_ms = 0, -- Maximum self time observed
 			self_last_ms = 0, -- Last self time observed
+			-- Parent tracking
+			parent_counts = {}, -- { [parent_name] = call_count }
+			most_common_parent = nil, -- String: name of most frequent caller
 		}
 	end
 end
 
--- Child time tracking stack (for self-time calculation)
-local _child_time_stack = {}
+-- Child time tracking stack (for self-time calculation) - moved to shared state section
 
 local function compute_median(samples)
 	if not samples or #samples == 0 then
@@ -375,9 +385,16 @@ end
 
 -- Reset all statistics
 function reset_all()
-	stats = {}
-	timer_stacks = {}
-	_child_time_stack = {}
+	-- Clear shared state tables in place (preserve references)
+	for k in pairs(stats) do
+		stats[k] = nil
+	end
+	for k in pairs(timer_stacks) do
+		timer_stacks[k] = nil
+	end
+	for k in pairs(_child_time_stack) do
+		_child_time_stack[k] = nil
+	end
 	reset_flamegraph()
 end
 
@@ -572,6 +589,12 @@ local function wrap_function(module_name, func_name, original_func)
 			end
 		end
 
+		-- Get parent before pushing to call stack (for parent tracking)
+		local parent_name = nil
+		if #active_call_stack > 0 then
+			parent_name = active_call_stack[#active_call_stack]
+		end
+
 		-- Push to call stack (for depth tracking)
 		table.insert(active_call_stack, full_name)
 
@@ -579,6 +602,22 @@ local function wrap_function(module_name, func_name, original_func)
 		-- This groups all callbacks of the same type together in the flamegraph
 		if callback_name then
 			table.insert(active_call_stack, callback_name)
+		end
+
+		-- Track parent relationship
+		if parent_name then
+			init_stats(full_name)
+			local s = stats[full_name]
+			-- Increment count for this parent
+			s.parent_counts[parent_name] = (s.parent_counts[parent_name] or 0) + 1
+			-- Update most common parent
+			local max_count = 0
+			for pname, count in pairs(s.parent_counts) do
+				if count > max_count then
+					max_count = count
+					s.most_common_parent = pname
+				end
+			end
 		end
 
 		-- Start timing
@@ -616,7 +655,8 @@ local function wrap_function(module_name, func_name, original_func)
 
 			local stack_key = table.concat(stack_trace, ";")
 			flamegraph_samples[stack_key] = (flamegraph_samples[stack_key] or 0) + duration_ms
-			flamegraph_total_samples = flamegraph_total_samples + 1
+			S.flamegraph_total_samples = (S.flamegraph_total_samples or 0) + 1
+			flamegraph_total_samples = S.flamegraph_total_samples
 		end
 
 		-- Pop callback name frame if we added one
@@ -1618,32 +1658,42 @@ end
 -- ============================================================================
 
 function enable_flamegraph()
+	S.flamegraph_enabled = true
 	flamegraph_enabled = true
-	flamegraph_samples = {}
+	-- Clear shared table in place
+	for k in pairs(flamegraph_samples) do
+		flamegraph_samples[k] = nil
+	end
+	S.flamegraph_total_samples = 0
 	flamegraph_total_samples = 0
 	printf("[DEVTOOLS] Flamegraph data collection ENABLED")
 end
 
 function disable_flamegraph()
+	S.flamegraph_enabled = false
 	flamegraph_enabled = false
 	printf("[DEVTOOLS] Flamegraph data collection DISABLED")
 end
 
 function is_flamegraph_enabled()
-	return flamegraph_enabled
+	return S.flamegraph_enabled
 end
 
 function get_flamegraph_sample_count()
-	return flamegraph_total_samples
+	return S.flamegraph_total_samples or 0
 end
 
 function reset_flamegraph()
-	flamegraph_samples = {}
+	-- Clear shared table in place
+	for k in pairs(flamegraph_samples) do
+		flamegraph_samples[k] = nil
+	end
+	S.flamegraph_total_samples = 0
 	flamegraph_total_samples = 0
 end
 
 function export_flamegraph(filepath)
-	if not flamegraph_enabled or flamegraph_total_samples == 0 then
+	if not S.flamegraph_enabled or (S.flamegraph_total_samples or 0) == 0 then
 		printf("[DEVTOOLS] No flamegraph data to export (enable flamegraph collection first)")
 		return false
 	end
@@ -1684,7 +1734,7 @@ function export_flamegraph(filepath)
 		"[DEVTOOLS] Flamegraph exported to: %s (%s unique stacks, %s total samples)",
 		path,
 		tostring(#sorted_stacks),
-		tostring(flamegraph_total_samples)
+		tostring(S.flamegraph_total_samples or 0)
 	)
 	return true, path
 end

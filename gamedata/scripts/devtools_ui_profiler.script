@@ -83,6 +83,15 @@ local last_csv_export_path = nil
 local last_csv_export_time = 0
 local CSV_EXPORT_MESSAGE_DURATION = 5000
 
+-- Call graph export state
+local last_callgraph_export_path = nil
+local last_callgraph_export_time = 0
+local CALLGRAPH_EXPORT_MESSAGE_DURATION = 5000
+local callgraph_min_calls = 1
+local callgraph_min_calls_text = "1"
+local callgraph_min_total_ms = 0
+local callgraph_min_total_ms_text = "0"
+
 -- Flamegraph export state
 local last_flamegraph_export_path = nil
 local last_flamegraph_export_time = 0
@@ -645,6 +654,69 @@ function render_profiling_controls()
 		ImGui.EndTooltip()
 	end
 
+	ImGui.SameLine()
+
+	if ImGui.Button("Export Call Graph", vector2(140, 0)) then
+		if devtools_profiler_export and type(devtools_profiler_export.export_callgraph_dot) == "function" then
+			local options = {
+				min_calls = callgraph_min_calls,
+				min_total_ms = callgraph_min_total_ms,
+			}
+			local success, path = devtools_profiler_export.export_callgraph_dot(nil, options)
+			if success then
+				last_callgraph_export_path = path
+				last_callgraph_export_time = time_global()
+			else
+				last_callgraph_export_path = nil
+				last_callgraph_export_time = 0
+			end
+		end
+	end
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Export call graph to Graphviz DOT format.\nUses min calls and min total ms filters below.\nSaved to appdata folder as devtools_callgraph.dot.")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
+
+	ImGui.Spacing()
+	ImGui.Text("Call Graph Filters:")
+	ImGui.SameLine()
+	ImGui.Text("Min Calls:")
+	ImGui.SameLine()
+	local new_min_calls_text, min_calls_changed = ImGui.InputText("##callgraph_min_calls", callgraph_min_calls_text, 6)
+	if min_calls_changed then
+		callgraph_min_calls_text = new_min_calls_text
+		local num = tonumber(new_min_calls_text)
+		if num then
+			callgraph_min_calls = math.max(1, math.floor(num))
+		end
+	end
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Minimum number of calls required to include an edge in the graph.\nDefault: 1")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
+
+	ImGui.SameLine()
+	ImGui.Text("Min Total (ms):")
+	ImGui.SameLine()
+	local new_min_total_text, min_total_changed = ImGui.InputText("##callgraph_min_total", callgraph_min_total_ms_text, 8)
+	if min_total_changed then
+		callgraph_min_total_ms_text = new_min_total_text
+		local num = tonumber(new_min_total_text)
+		if num then
+			callgraph_min_total_ms = math.max(0, num)
+		end
+	end
+	if ImGui.BeginItemTooltip() then
+		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+		ImGui.Text("Minimum total time (ms) required to include a node in the graph.\nDefault: 0")
+		ImGui.PopTextWrapPos()
+		ImGui.EndTooltip()
+	end
+
 	ImGui.Spacing()
 	ImGui.Separator()
 	ImGui.Spacing()
@@ -976,6 +1048,27 @@ function render_profiling_controls()
 		ImGui.SameLine()
 		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
 		ImGui.TextWrapped(last_flamegraph_export_path)
+		ImGui.PopStyleColor(1)
+	end
+
+	-- Show call graph export path message
+	if last_callgraph_export_path and (time_global() - last_callgraph_export_time) < CALLGRAPH_EXPORT_MESSAGE_DURATION then
+		ImGui.Spacing()
+		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+		ImGui.Text("Call graph exported to:")
+		ImGui.PopStyleColor(1)
+		ImGui.SameLine()
+		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
+		ImGui.TextWrapped(last_callgraph_export_path)
+		ImGui.PopStyleColor(1)
+	elseif last_callgraph_export_path then
+		ImGui.Spacing()
+		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
+		ImGui.Text("Last call graph export:")
+		ImGui.PopStyleColor(1)
+		ImGui.SameLine()
+		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
+		ImGui.TextWrapped(last_callgraph_export_path)
 		ImGui.PopStyleColor(1)
 	end
 

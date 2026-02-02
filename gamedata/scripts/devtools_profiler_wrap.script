@@ -47,12 +47,23 @@ local function wrap_function(module_name, func_name, original_func)
 			end
 		end
 
+		-- Get parent before pushing to call stack
+		local parent_name = nil
+		if #S.active_call_stack > 0 then
+			parent_name = S.active_call_stack[#S.active_call_stack]
+		end
+
 		-- Push to call stack (for depth tracking)
 		table.insert(S.active_call_stack, full_name)
 
 		-- If this is make_callback, add a virtual frame for the callback name
 		if callback_name then
 			table.insert(S.active_call_stack, callback_name)
+		end
+
+		-- Track parent relationship
+		if parent_name then
+			Stats.track_parent_call(full_name, parent_name)
 		end
 
 		-- Start timing
