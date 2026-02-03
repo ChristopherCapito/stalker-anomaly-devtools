@@ -71,6 +71,7 @@ local cached_show_self_max = false
 -- Presets state
 local preset_name_input = ""
 local selected_preset_index = 0
+local loaded_preset_name = nil  -- Tracks which preset is currently loaded
 local preset_save_message = nil
 local preset_save_message_time = 0
 
@@ -102,12 +103,72 @@ local FLAMEGRAPH_MESSAGE_DURATION = 3000
 -- Timed profiling state (shared with main imgui module)
 devtools_ui_profiler = devtools_ui_profiler or {}
 devtools_ui_profiler.timed_profiling_enabled = false
-devtools_ui_profiler.profiling_duration_sec = 10
-devtools_ui_profiler.profiling_duration_text = "10"
+devtools_ui_profiler.profiling_duration_sec = 0  -- 0 means unlimited (no auto-stop)
+devtools_ui_profiler.profiling_duration_text = "0"  -- Single input field for time
 devtools_ui_profiler.profiling_start_time = 0
 devtools_ui_profiler.auto_rewrap_enabled = false
 devtools_ui_profiler.rewrap_interval_ms = 1000
 devtools_ui_profiler.last_rewrap_tg = 0
+-- Auto-export state for timed profiling completion
+devtools_ui_profiler.timed_profiling_auto_exported = false  -- Prevents multiple exports from single timed session
+
+-- Helper function to perform auto-export when timed profiling completes
+local function perform_timed_profiling_auto_export()
+	local profiler_ok = (devtools_profiler ~= nil)
+	
+	-- Export CSV
+	if profiler_ok and type(devtools_profiler.export_to_csv) == "function" then
+		local success, path = devtools_profiler.export_to_csv()
+		if success then
+			last_csv_export_path = path
+			last_csv_export_time = time_global()
+			printf("[DEVTOOLS] Auto-exported CSV after timed profiling: " .. tostring(path))
+			else
+			printf("[DEVTOOLS] Failed to auto-export CSV after timed profiling")
+		end
+	end
+	
+	-- Export Flamegraph
+	if profiler_ok and type(devtools_profiler.export_flamegraph) == "function" then
+		local success, path = devtools_profiler.export_flamegraph()
+		if success then
+			last_flamegraph_export_path = path
+			last_flamegraph_export_time = time_global()
+			printf("[DEVTOOLS] Auto-exported flamegraph after timed profiling: " .. tostring(path))
+		else
+			printf("[DEVTOOLS] Failed to auto-export flamegraph after timed profiling")
+		end
+	end
+end
+
+-- Helper function to check and handle timed profiling completion
+local function check_timed_profiling_completion()
+	local P = devtools_ui_profiler
+	if not P.timed_profiling_enabled or P.timed_profiling_auto_exported then
+		return false
+	end
+	
+	local elapsed = (time_global() - P.profiling_start_time) / 1000
+	local remaining = P.profiling_duration_sec - elapsed
+	
+	if remaining <= 0 then
+		-- Time is up - stop profiling and auto-export
+		P.timed_profiling_auto_exported = true
+		
+		-- Stop profiling first
+		if devtools_profiler and type(devtools_profiler.disable) == "function" then
+			devtools_profiler.disable()
+			printf("[DEVTOOLS] Timed profiling completed - stopped after " .. tostring(P.profiling_duration_sec) .. "s")
+		end
+		
+		-- Then export data
+		perform_timed_profiling_auto_export()
+		
+		return true
+	end
+	
+	return false
+end
 
 -- ============================================================================
 -- PROFILER TAB RENDERING
@@ -170,18 +231,20 @@ function render_module_browser()
 			selected_preset_index = 0
 		end
 		
-		if ImGui.BeginCombo("##preset_selector", preset_display_names[selected_preset_index + 1] or "(Select preset...)", 0) then
+		-- Determine what to show in the dropdown: loaded preset takes priority
+		local dropdown_display = "(Select preset...)"
+		if loaded_preset_name then
+			dropdown_display = loaded_preset_name
+		elseif selected_preset_index > 0 then
+			dropdown_display = preset_display_names[selected_preset_index + 1] or "(Select preset...)"
+		end
+		
+		if ImGui.BeginCombo("##preset_selector", dropdown_display, 0) then
 			for i = 0, #preset_display_names - 1 do
 				local is_selected = (selected_preset_index == i)
 				if ImGui.Selectable(preset_display_names[i + 1], is_selected, 0, vector2(200, 0)) then
 					selected_preset_index = i
-					if i > 0 then
-						local preset_name = preset_names[i]
-						if preset_name then
-							devtools_profiler.load_preset(preset_name)
-							selected_preset_index = 0
-						end
-					end
+					-- Don't auto-load on selection anymore - use Load button
 				end
 				if is_selected then
 					ImGui.SetItemDefaultFocus()
@@ -199,13 +262,15 @@ function render_module_browser()
 		
 		ImGui.Spacing()
 		
-		-- Load button
+		-- =============== PRESET ACTIONS ===============
+		-- Load button - enabled when a preset is selected from dropdown
 		if selected_preset_index > 0 and selected_preset_index <= #preset_names then
 			if ImGui.Button("Load##preset_load", vector2(60, 0)) then
 				local preset_name = preset_names[selected_preset_index]
 				if preset_name then
 					devtools_profiler.load_preset(preset_name)
-					selected_preset_index = 0
+					loaded_preset_name = preset_name  -- Track the loaded preset
+					selected_preset_index = 0  -- Reset selection after load
 				end
 			end
 		else
@@ -216,16 +281,14 @@ function render_module_browser()
 		
 		ImGui.SameLine(0, 5)
 		
-		-- Delete button
-		if selected_preset_index > 0 and selected_preset_index <= #preset_names then
+		-- Delete button - enabled when a preset is loaded
+		if loaded_preset_name then
 			ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.5, 0.2, 0.2, 1))
 			ImGui.PushStyleColor(ImGuiCol.ButtonHovered, fcolor():set(0.8, 0.3, 0.3, 1))
 			if ImGui.Button("Delete##preset_delete", vector2(60, 0)) then
-				local preset_name = preset_names[selected_preset_index]
-				if preset_name then
-					devtools_profiler.delete_preset(preset_name)
-					selected_preset_index = 0
-				end
+				devtools_profiler.delete_preset(loaded_preset_name)
+				loaded_preset_name = nil  -- Clear loaded preset after deletion
+				selected_preset_index = 0  -- Also reset selection
 			end
 			ImGui.PopStyleColor(2)
 		else
@@ -236,7 +299,16 @@ function render_module_browser()
 		
 		ImGui.SameLine(0, 10)
 
-		-- Save preset button
+		-- Save new preset section - grouped together for clarity
+		ImGui.Text("New Preset Name:")
+		ImGui.SameLine()
+		local new_name, name_changed = ImGui.InputText("##preset_name", preset_name_input, 30)
+		if name_changed then
+			preset_name_input = new_name
+		end
+		ImGui.SameLine(0, 5)
+		
+		-- Save preset button - right next to the name input
 		if ImGui.Button("Save##preset_save", vector2(60, 0)) then
 			if preset_name_input ~= "" then
 				local success = devtools_profiler.save_preset(preset_name_input)
@@ -254,17 +326,7 @@ function render_module_browser()
 			end
 		end
 		
-		ImGui.SameLine(0, 10)
-		
-		-- Name input field
-		ImGui.Text("Name:")
-		ImGui.SameLine()
-		local new_name, name_changed = ImGui.InputText("##preset_name", preset_name_input, 30)
-		if name_changed then
-			preset_name_input = new_name
-		end
-		
-		-- Show save message
+		-- Show save message inline with the save controls
 		if preset_save_message and (time_global() - preset_save_message_time) < 5000 then
 			ImGui.SameLine(0, 10)
 			local color = fcolor():set(0.4, 1, 0.4, 1)
@@ -278,6 +340,8 @@ function render_module_browser()
 			preset_save_message = nil
 		end
 
+		-- Visual separator between preset management and module search
+		ImGui.Separator()
 		ImGui.Spacing()
 
 		-- =============== SEARCH SECTION ===============
@@ -539,7 +603,13 @@ function render_profiling_controls()
 			ImGui.EndTooltip()
 		end
 
-		if P.timed_profiling_enabled then
+		-- Check for timed profiling completion (auto-stop and auto-export)
+		if P.timed_profiling_enabled and P.profiling_duration_sec > 0 then
+			check_timed_profiling_completion()
+		end
+		
+		-- Show remaining time if timed profiling is active with a time limit
+		if P.timed_profiling_enabled and P.profiling_duration_sec > 0 then
 			ImGui.SameLine()
 			local elapsed = (time_global() - P.profiling_start_time) / 1000
 			local remaining = math.max(0, P.profiling_duration_sec - elapsed)
@@ -555,11 +625,18 @@ function render_profiling_controls()
 
 		if ImGui.Button("Start Profiling", vector2(120, 0)) then
 			if can_start then
-				devtools_profiler.enable()
-				if P.timed_profiling_enabled then
+				-- Enable timed profiling if a duration > 0 is set
+				if P.profiling_duration_sec > 0 then
+					P.timed_profiling_enabled = true
 					P.profiling_start_time = time_global()
+					P.timed_profiling_auto_exported = false  -- Reset auto-export flag
 					printf("[DEVTOOLS] Timed profiling started - will stop in " .. tostring(P.profiling_duration_sec) .. "s")
+				else
+					-- Duration is 0/unlimited - no auto-stop
+					P.timed_profiling_enabled = false
+					printf("[DEVTOOLS] Profiling started - unlimited duration (manual stop required)")
 				end
+				devtools_profiler.enable()
 			end
 		end
 		if ImGui.BeginItemTooltip() then
@@ -587,35 +664,27 @@ function render_profiling_controls()
 			ImGui.PopStyleColor(1)
 		end
 
-		-- Timed profiling controls
+		-- Timed profiling controls (single input field - 0 or empty = unlimited)
 		ImGui.SameLine(0, 20)
-		local _, new_timed = ImGui.Checkbox("Timed##timed_profiling", P.timed_profiling_enabled)
-		if new_timed ~= P.timed_profiling_enabled then
-			P.timed_profiling_enabled = new_timed
+		ImGui.Text("Time (sec):")
+		ImGui.SameLine()
+		local new_text, text_changed = ImGui.InputText("##duration", P.profiling_duration_text, 6)
+		if text_changed then
+			P.profiling_duration_text = new_text
+			local num = tonumber(new_text)
+			if num then
+				-- Allow 0-300 seconds (0 = unlimited/no auto-stop)
+				P.profiling_duration_sec = math.max(0, math.min(300, math.floor(num)))
+			else
+				-- Empty or invalid = 0 (unlimited)
+				P.profiling_duration_sec = 0
+			end
 		end
 		if ImGui.BeginItemTooltip() then
 			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-			ImGui.Text("Automatically stop profiling after the specified duration.\nPerfect for consistent benchmark recordings.\nRange: 1-300 seconds.")
+			ImGui.Text("Profiling duration in seconds.\n0 or empty = unlimited (manual stop required).\n>0 = auto-stop and auto-export after N seconds.\nRange: 0-300 seconds (5 minutes max).")
 			ImGui.PopTextWrapPos()
 			ImGui.EndTooltip()
-		end
-
-		if P.timed_profiling_enabled then
-			ImGui.SameLine()
-			local new_text, text_changed = ImGui.InputText("sec##duration", P.profiling_duration_text, 5)
-			if text_changed then
-				P.profiling_duration_text = new_text
-				local num = tonumber(new_text)
-				if num then
-					P.profiling_duration_sec = math.max(1, math.min(300, math.floor(num)))
-				end
-			end
-			if ImGui.BeginItemTooltip() then
-				ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-				ImGui.Text("Profiling duration in seconds.\nRange: 1-300 seconds (5 minutes max).\nProfiling will automatically stop after this time.")
-				ImGui.PopTextWrapPos()
-				ImGui.EndTooltip()
-			end
 		end
 	end
 
