@@ -5,6 +5,24 @@ All notable changes to Anomaly DevTools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-03
+
+### Added
+- **Self-Time Tracking**: New self-time metrics (total, average, median, min, max) show time spent in a function excluding child calls. Provides clearer picture of actual function performance vs cumulative time.
+- **Parent Function Tracking**: Track caller relationships and identify most common callers for each function. Understand which code paths are invoking your slow functions.
+- **Call Graph Export**: Export call graphs in DOT format for visualization in Graphviz and other tools. Analyze function call relationships and module dependencies.
+- **Timed Profiling Auto-Export**: CSV and flamegraph are now automatically exported when timed profiling completes. No more missing data when the timer expires.
+- **Modular Architecture**: Complete code refactoring splitting monolithic codebase into focused modules for better maintainability and extensibility.
+
+### Fixed
+- **Timed Profiling**: Fixed issues with timed profiling functionality ensuring reliable auto-stop behavior.
+- **Preset Load/Delete**: Fixed preset loading and deletion operations for more reliable preset management.
+- **Dropdown Display**: Fixed dropdown display issues in the UI for better usability.
+- **UI Improvements**: Various UI refinements and visual fixes for a cleaner interface.
+
+### Changed
+- **Code Architecture**: Major refactoring from monolithic to modular design with separated concerns (profiler core, UI, exports, logging, config).
+
 ## [1.2.2] - 2026-01-28
 
 ### Added

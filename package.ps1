@@ -2,7 +2,7 @@
 # Usage: .\package.ps1
 
 $ModName = "Anomaly_DevTools"
-$Version = "1.2.2"
+$Version = "1.3.0"
 $OutputDir = "$PSScriptRoot\releases"
 $ZipName = "${ModName}_v${Version}.zip"
 

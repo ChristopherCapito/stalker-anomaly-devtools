@@ -1,4 +1,4 @@
-[1.2.2] Anomaly DevTools - Profiler & Logger
+[1.3.0] Anomaly DevTools - Profiler & Logger
 
 **Creator:** CDEV
 
@@ -8,34 +8,33 @@ A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-cod
 **Key Features:**
 *   **Zero-Code Auto-Discovery:** Profile any Lua module without modifying its source code—just load your mod normally and DevTools discovers it automatically.
 *   **Live Statistics:** View real-time function timing (calls, avg/median/min/max/total ms).
+*   **Self-Time Tracking:** See time spent in functions excluding child calls for accurate bottleneck identification.
+*   **Parent Function Tracking:** Track caller relationships and identify most common callers.
 *   **Module Browser:** Built-in UI to view active modules (optional fine-tuning available).
 *   **Profiling Presets:** Save and load your profiling configurations for different debugging scenarios.
 *   **Profile on Load:** Automatically start profiling when the game loads or transitions between locations (optional).
-*   **Timed Profiling:** Auto-stop profiling after a specified duration (1-300 seconds).
+*   **Timed Profiling:** Auto-stop profiling after a specified duration (1-300 seconds) with auto-export.
 *   **Minimal Mode:** Hide stats table for maximum FPS during data collection.
 *   **Structured Logging:** Advanced logging with severity levels (DEBUG, INFO, WARN, ERROR), custom categories, and filtering.
 *   **CSV Export:** Export profiling data to CSV for external analysis.
 *   **Flamegraph Export:** Export call stack data in collapsed stacks format (`.folded`) for visualization in external tools like FlameGraph.pl, Inferno, and speedscope.
+*   **Call Graph Export:** Export call graphs in DOT format for visualization in Graphviz.
 *   **ImGui Interface:** Self-contained UI panel for controlling the profiler and viewing logs.
 
-**What's New in v1.2.2:**
+**What's New in v1.3.0:**
 
-**Critical Fixes:**
-*   **Fixed:** Exponential function count growth when repeatedly starting/stopping profiling
-*   **Fixed:** Auto-rewrap feature not running (now properly executes at intervals)
-*   **Fixed:** Decimal precision regression with toggleable high-precision mode
+**Major Changes:**
+*   **Code Refactoring:** Split monolithic codebase into modular architecture for better maintainability
+*   **Self-Time Tracking:** New self-time metrics (total, avg, median, min, max) show actual function performance excluding child calls
+*   **Parent Function Tracking:** Track caller relationships and identify most common callers for each function
+*   **Call Graph Export:** Export call graphs in DOT format for visualization
+*   **Timed Profiling Auto-Export:** CSV and flamegraph automatically export when timed profiling completes
 
-**New Features:**
-*   **New:** Custom module colors with color picker UI - set your own colors and persist with presets
-*   **New:** High precision display mode (6 decimal places) for detailed analysis
-*   **New:** Elapsed time tracking during profiling sessions
-*   **New:** Improved preset management with dropdown selector and better save/load workflow
-*   **New:** Auto-rewrap logging to DevTools logger for better visibility
-
-**UI Improvements:**
-*   **Added:** Comprehensive tooltips for all UI controls
-*   **Improved:** Better preset save/load workflow with visual feedback
-*   **Improved:** Organized filesystem structure (`devtools/` folder for all exports)
+**Fixes:**
+*   **Fixed:** Timed profiling reliability issues
+*   **Fixed:** Preset load/delete operations
+*   **Fixed:** Dropdown display issues
+*   **Improved:** Various UI refinements
 
 **Usage:**
 1.  Start the game.

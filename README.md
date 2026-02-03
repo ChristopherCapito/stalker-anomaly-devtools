@@ -120,26 +120,23 @@
 
 ---
 
-## 📝 Version 1.2.2
+## 📝 Version 1.3.0
 
-🔧 **Critical Fixes:**
-- Fixed exponential function count growth when repeatedly starting/stopping profiling
-- Fixed auto-rewrap feature not running (now properly executes at intervals)
-- Fixed decimal precision regression with toggleable high-precision mode
+🔧 **Major Refactoring & Fixes:**
+- **Code Refactoring**: Split monolithic codebase into modular architecture for better maintainability
+- Fixed timed profiling reliability issues
+- Fixed preset load/delete operations
+- Fixed dropdown display issues
+- Various UI improvements
 
 ✨ **New Features:**
-- Custom module colors with color picker UI
-- High precision display mode (6 decimal places) for detailed analysis
-- Elapsed time tracking during profiling sessions
-- Improved preset management with dropdown selector
-- Auto-rewrap logging to DevTools logger
-
-🎨 **UI Improvements:**
-- Comprehensive tooltips for all controls
-- Better preset save/load workflow with visual feedback
-- Organized filesystem structure (`devtools/` folder)
+- **Self-Time Tracking**: Track time spent in functions excluding child calls (total, avg, median, min, max)
+- **Parent Function Tracking**: See caller relationships and most common callers for each function
+- **Call Graph Export**: Export call graphs in DOT format for visualization
+- **Timed Profiling Auto-Export**: CSV and flamegraph automatically export when timed profiling completes
 
 📦 **Previous Versions:**
+- **v1.2.2**: Critical fixes for function rewrapping, auto-rewrap, custom module colors
 - **v1.2.1**: Median execution time, toggleable columns, color mapping fix
 - **v1.2.0**: LuaBind class method profiling, verbose logging flag  
 

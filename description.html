@@ -1,4 +1,4 @@
-<h1>Anomaly DevTools - Profiler & Logger v1.2.2</h1>
+<h1>Anomaly DevTools - Profiler & Logger v1.3.0</h1>
 
 <p><strong>A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-code performance profiling and structured logging for any mod.</strong></p>
 
@@ -13,24 +13,28 @@
     <li><strong>Structured Logging:</strong> Advanced logging system with severity levels (DEBUG, INFO, WARN, ERROR), custom categories, color coding, and filtering.</li>
     <li><strong>CSV Export:</strong> Export profiling data to CSV for detailed analysis in Excel, Google Sheets, or other tools.</li>
     <li><strong>Flamegraph Export:</strong> Export call stack data in collapsed stacks format (`.folded`) for visualization in external tools like FlameGraph.pl, Inferno, and speedscope.</li>
+    <li><strong>Call Graph Export:</strong> Export call graphs in DOT format for visualization in Graphviz and other tools. Analyze function call relationships and module dependencies.</li>
+    <li><strong>Self-Time Tracking:</strong> New self-time metrics (total, average, median, min, max) show time spent in a function excluding child calls. Provides clearer picture of actual function performance vs cumulative time.</li>
+    <li><strong>Parent Function Tracking:</strong> Track caller relationships and identify most common callers for each function. Understand which code paths are invoking your slow functions.</li>
+    <li><strong>Timed Profiling Auto-Export:</strong> CSV and flamegraph are now automatically exported when timed profiling completes. No more missing data when the timer expires.</li>
     <li><strong>ImGui Interface:</strong> Self-contained, user-friendly UI panel for controlling the profiler and viewing logs in-game.</li>
     <li><strong>Profile on Load:</strong> Automatically start profiling when the game loads or transitions between locations (optional).</li>
+    <li><strong>Modular Architecture:</strong> Complete code refactoring splitting monolithic codebase into focused modules for better maintainability and extensibility.</li>
 </ul>
 
-<h2>What's New in v1.2.2</h2>
+<h2>What's New in v1.3.0</h2>
 <ul>
-    <li><strong>🔧 Critical Fixes:</strong> Fixed exponential function count growth bug, auto-rewrap not running, and decimal precision regression</li>
-    <li><strong>New:</strong> Custom module colors with color picker UI - set your own colors and persist with presets</li>
-    <li><strong>New:</strong> High precision display mode (6 decimal places) for detailed analysis</li>
-    <li><strong>New:</strong> Elapsed time tracking during profiling sessions</li>
-    <li><strong>New:</strong> Improved preset management with dropdown selector</li>
-    <li><strong>New:</strong> Auto-rewrap logging to DevTools logger</li>
-    <li><strong>Improved:</strong> Comprehensive tooltips for all UI controls</li>
-    <li><strong>Improved:</strong> Organized filesystem structure (devtools/ folder)</li>
+    <li><strong>🎯 Self-Time Tracking:</strong> New self-time metrics (total, average, median, min, max) show time spent in a function excluding child calls</li>
+    <li><strong>🎯 Parent Function Tracking:</strong> Track caller relationships and identify most common callers for each function</li>
+    <li><strong>🎯 Call Graph Export:</strong> Export call graphs in DOT format for visualization in Graphviz and other tools</li>
+    <li><strong>🎯 Timed Profiling Auto-Export:</strong> CSV and flamegraph are now automatically exported when timed profiling completes</li>
+    <li><strong>🔧 Bug Fixes:</strong> Fixed timed profiling issues, preset load/delete operations, dropdown display issues, and various UI improvements</li>
+    <li><strong>🏗️ Modular Architecture:</strong> Complete code refactoring from monolithic to modular design with separated concerns</li>
 </ul>
 
 <h2>Previous Versions</h2>
 <ul>
+    <li><strong>v1.2.2:</strong> Critical fixes for function wrapping, custom module colors, high precision display, elapsed time tracking</li>
     <li><strong>v1.2.1:</strong> Median execution time, toggleable columns, color mapping fix</li>
     <li><strong>v1.2.0:</strong> LuaBind class method profiling, verbose logging flag</li>
     <li><strong>v1.1.2:</strong> Major performance improvements (2x FPS), timed profiling, minimal mode</li>
@@ -82,9 +86,11 @@
 <h2>Files Included</h2>
 <ul>
     <li><code>devtools_profiler.script</code> - Core profiling engine</li>
-    <li><code>devtools_config.script</code> - Configuration and presets storage</li>
+    <li><code>devtools_profiler_export.script</code> - Export functionality (CSV, flamegraph, DOT)</li>
+    <li><code>devtools_ui_profiler.script</code> - Profiler ImGui user interface</li>
+    <li><code>devtools_ui_logging.script</code> - Logging ImGui user interface</li>
     <li><code>devtools_logging.script</code> - Structured logging system</li>
-    <li><code>devtools_imgui.script</code> - ImGui user interface</li>
+    <li><code>devtools_config.script</code> - Configuration and presets storage</li>
     <li><code>mod_script_devtools_early.ltx</code> - DLTX config for early script loading</li>
     <li><code>devtools_README.md</code> - Detailed documentation (included in package)</li>
 </ul>
@@ -94,7 +100,8 @@
     <li><strong>Timer Precision:</strong> Uses X-Ray's native <code>profile_timer</code> for microsecond-precision timing</li>
     <li><strong>Stack Overflow Protection:</strong> Multiple safeguards including module blacklists, function blacklists, and call depth limits</li>
     <li><strong>Performance Impact:</strong> Adds ~1-5% overhead when profiling. Disable during normal gameplay.</li>
-    <li><strong>Configuration Storage:</strong> Presets are stored in <code>appdata/devtools_presets.txt</code></li>
+    <li><strong>Configuration Storage:</strong> Presets are stored in <code>appdata/devtools/presets/devtools_presets.txt</code></li>
+    <li><strong>Export Locations:</strong> CSV exports to <code>appdata/devtools/devtools_profiler_export.csv</code>, flamegraph to <code>appdata/devtools/devtools_flamegraph.folded</code>, call graph to <code>appdata/devtools/devtools_callgraph.dot</code></li>
 </ul>
 
 <h2>Tips</h2>
@@ -104,6 +111,9 @@
     <li>Save presets for different debugging scenarios (e.g., "AI_Debug", "Combat_Debug")</li>
     <li>Use CSV export to compare performance across different game sessions</li>
     <li>Export flamegraph data to visualize call stacks and identify performance bottlenecks</li>
+    <li>Export call graphs in DOT format to analyze function call relationships and module dependencies</li>
+    <li>Use self-time metrics to identify functions that are actually slow vs those that just call slow functions</li>
+    <li>Check parent function tracking to understand which code paths are invoking your slow functions</li>
     <li>The Module Browser scans all of <code>_G</code> - you can profile ANY mod, even ones you didn't write</li>
 </ul>
 

@@ -12,6 +12,7 @@
 - [Quick Start](#quick-start)
 - [Use Cases](#use-cases)
 - [Features in Detail](#features-in-detail)
+- [What's New in v1.3.0](#whats-new-in-v130)
 - [What's New in v1.2.2](#whats-new-in-v122)
 - [Important Notes](#important-notes)
 - [Files Included](#files-included)
@@ -56,10 +57,13 @@ Perfect for modders who want to **optimize their work, debug performance issues,
 
 ### ⚙️ Advanced Profiling Features
 - **Profiling Presets**: Save/load different module selections for different scenarios
-- **Timed Profiling**: Auto-stop after a duration (1-300 seconds)
+- **Timed Profiling**: Auto-stop after a duration (1-300 seconds) with automatic CSV/flamegraph export
 - **Minimal Mode**: Hide stats table for maximum FPS during collection
 - **Profile on Load**: Auto-start profiling when game loads or transitions
 - **LuaBind Class Method Support**: Profile class methods like `utils_ui.UICellItem.Update`
+- **Self-Time Tracking**: Track time spent in functions excluding child calls (total, avg, median, min, max)
+- **Parent Function Tracking**: See caller relationships and most common callers for each function
+- **Call Graph Export**: Export call graphs in DOT format for visualization in Graphviz
 
 ### 📝 Structured Logging
 - **Custom categories** with colors and quick filters
@@ -123,10 +127,10 @@ That's it. No code changes. No registration. No hassle.
 |---------|---------|
 | **Enable Profiling** | Checkbox to turn profiling on/off |
 | **Profile on Load** | Auto-start profiling when game loads or transitions |
-| **Timed Profiling** | Duration spinner (1-300 seconds) — auto-stops after time expires |
+| **Timed Profiling** | Duration spinner (1-300 seconds) — auto-stops after time expires, auto-exports CSV and flamegraph |
 | **Minimal Mode** | Hide stats table for maximum FPS during collection |
 | **Module Browser** | Expand to select/deselect modules (optional — auto-discovery is default) |
-| **Columns** | Toggle individual columns: Calls/Avg/Median/Min/Max/Total |
+| **Columns** | Toggle individual columns: Calls/Avg/Median/Min/Max/Total/Self-Time metrics |
 | **Row Limit** | Display All/50/100/200 rows (default: 100 for best performance) |
 | **Sort** | Click column headers to sort by any metric |
 
@@ -138,6 +142,11 @@ That's it. No code changes. No registration. No hassle.
 - **Min (ms)**: Fastest single call
 - **Max (ms)**: Slowest single call
 - **Total (ms)**: Total cumulative time across all calls
+- **Self Total (ms)**: Total time spent in function excluding child calls
+- **Self Avg (ms)**: Average self-time per call
+- **Self Median (ms)**: Median self-time per call
+- **Self Min (ms)**: Minimum self-time recorded
+- **Self Max (ms)**: Maximum self-time recorded
 
 ### Export Options
 
@@ -152,6 +161,12 @@ That's it. No code changes. No registration. No hassle.
 - Or use [FlameGraph.pl](https://github.com/brendangregg/FlameGraph) or [Inferno](https://www.brendangregg.com/flamegraph.html)
 - Shows which call stacks consume the most time
 
+**Call Graph Export**
+- Exports function call relationships in DOT format (`.dot`)
+- Visualize in [Graphviz](https://graphviz.org/) or online DOT viewers
+- Shows module dependencies and call patterns
+- Helps understand code architecture and flow
+
 ### Logging Tab
 
 - **Severity Levels**: DEBUG (blue), INFO (green), WARN (yellow), ERROR (red)
@@ -161,6 +176,15 @@ That's it. No code changes. No registration. No hassle.
 - **Clear Logs**: Wipe current log history
 
 ---
+
+## What's New in v1.3.0
+
+- 🏗️ **Code Refactoring**: Split monolithic codebase into modular architecture for better maintainability
+- ⏱️ **Self-Time Tracking**: New self-time metrics (total, avg, median, min, max) show actual function performance excluding child calls
+- 📞 **Parent Function Tracking**: Track caller relationships and identify most common callers for each function
+- 🕸️ **Call Graph Export**: Export call graphs in DOT format for visualization in Graphviz
+- 📤 **Timed Profiling Auto-Export**: CSV and flamegraph automatically export when timed profiling completes
+- 🔧 **Bug Fixes**: Fixed timed profiling, preset load/delete, dropdown display issues
 
 ## What's New in v1.2.2
 
@@ -210,7 +234,9 @@ That's it. No code changes. No registration. No hassle.
 | File | Purpose |
 |------|---------|
 | `devtools_profiler.script` | Core profiling engine with auto-discovery and statistics tracking |
-| `devtools_imgui.script` | ImGui user interface and controls |
+| `devtools_ui_profiler.script` | ImGui user interface and controls for the profiler |
+| `devtools_ui_logger.script` | ImGui user interface for the logging system |
+| `devtools_profiler_export.script` | Export functionality for CSV, flamegraph, and call graph |
 | `devtools_logging.script` | Structured logging system with categories and severity levels |
 | `devtools_config.script` | Configuration and preset storage |
 | `devtools_README.md` | In-game documentation reference |
@@ -274,11 +300,23 @@ _G.my_namespace = {
 
 1. **Enable Profiling**: Select modules
 2. **Play**: Reproduce the scenario you're analyzing
-3. **Export Flamegraph**: Click "Export Flamegraph"
+3. **Export Flamegraph**: Click "Export Flamegraph" (or use Timed Profiling for auto-export)
 4. **Visualize**: Open in [SpeedScope.app](https://www.speedscope.app/)
    - Drag-and-drop the `.folded` file
    - Look for thick stacks (high CPU time)
 5. **Optimize**: Focus on the thickest call stacks first
+6. **Verify**: Re-profile and compare
+
+### Call Graph Analysis Workflow
+
+1. **Enable Profiling**: Select modules with call graph tracking
+2. **Play**: Reproduce the scenario you're analyzing
+3. **Export Call Graph**: Click "Export Call Graph"
+4. **Visualize**: Open the `.dot` file in a Graphviz viewer or online tool
+   - View function call relationships
+   - Identify module dependencies
+   - Understand code architecture
+5. **Optimize**: Focus on heavily-called functions and unexpected call patterns
 6. **Verify**: Re-profile and compare
 
 ---
@@ -297,7 +335,7 @@ Found a bug? Have a feature request?
 
 **Created by:** CDEV
 
-**Version:** 1.2.2
+**Version:** 1.3.0
 
 **For:** S.T.A.L.K.E.R. Anomaly modding community
 
