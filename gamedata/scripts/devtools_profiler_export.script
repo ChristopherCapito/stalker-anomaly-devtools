@@ -136,8 +136,18 @@ function get_flamegraph_sample_count()
 end
 
 function reset_flamegraph()
-	S.flamegraph_samples = {}
+	-- Clear in place to preserve references
+	for k in pairs(S.flamegraph_samples) do
+		S.flamegraph_samples[k] = nil
+	end
 	S.flamegraph_total_samples = 0
+
+	-- Truncate exported flamegraph file (clear contents without deleting)
+	local path = get_flamegraph_export_path()
+	if path and path ~= "" then
+		local f = io.open(path, "w")
+		if f then f:close() end
+	end
 end
 
 function export_flamegraph(filepath)
@@ -375,3 +385,198 @@ M.get_flamegraph_export_path = get_flamegraph_export_path
 -- DOT Call Graph
 M.export_callgraph_dot = export_callgraph_dot
 M.get_callgraph_dot_path = get_callgraph_dot_path
+
+-- ============================================================================
+-- JSONL LIVE STREAMING
+-- ============================================================================
+
+-- Get the JSONL streaming file path
+function get_jsonl_stream_path()
+	local appdata = getFS():update_path("$app_data_root$", "")
+	local devtools_dir
+	if appdata and appdata ~= "" then
+		devtools_dir = appdata .. "devtools\\"
+	else
+		devtools_dir = getFS():update_path("$logs$", "") .. "devtools\\"
+	end
+	return devtools_dir .. "devtools_profiler_live.jsonl"
+end
+
+-- Start JSONL streaming
+function start_jsonl_stream()
+	if S.jsonl_streaming_enabled then
+		printf("[DEVTOOLS] JSONL streaming already active")
+		return false
+	end
+
+	local path = get_jsonl_stream_path()
+	local file = io.open(path, "w") -- Overwrite existing file
+	if not file then
+		printf("[DEVTOOLS] Failed to open JSONL stream file: " .. tostring(path))
+		return false
+	end
+
+	S.jsonl_file_handle = file
+	S.jsonl_file_path = path
+	S.jsonl_streaming_enabled = true
+	S.jsonl_start_time = time_global()
+	S.jsonl_write_count = 0
+	S.jsonl_buffer = {}
+	S.jsonl_buffer_size = 0
+
+	printf("[DEVTOOLS] JSONL streaming STARTED: " .. tostring(path))
+	return true
+end
+
+-- Stop JSONL streaming
+function stop_jsonl_stream()
+	if not S.jsonl_streaming_enabled then
+		return false
+	end
+
+	-- Flush any remaining buffer
+	flush_jsonl_buffer()
+
+	-- Close file
+	if S.jsonl_file_handle then
+		S.jsonl_file_handle:close()
+		S.jsonl_file_handle = nil
+	end
+
+	local path = S.jsonl_file_path
+	local count = S.jsonl_write_count
+
+	S.jsonl_streaming_enabled = false
+	S.jsonl_file_path = nil
+	S.jsonl_start_time = nil
+	S.jsonl_write_count = 0
+	S.jsonl_buffer = {}
+	S.jsonl_buffer_size = 0
+
+	printf("[DEVTOOLS] JSONL streaming STOPPED: %s (%d entries written)", tostring(path), count)
+	return true, path, count
+end
+
+-- Check if streaming is active
+function is_jsonl_streaming()
+	return S.jsonl_streaming_enabled
+end
+
+-- Get streaming statistics
+function get_jsonl_stream_stats()
+	return {
+		enabled = S.jsonl_streaming_enabled,
+		path = S.jsonl_file_path,
+		write_count = S.jsonl_write_count,
+	}
+end
+
+-- Write a single entry to the JSONL stream (called from wrap_function)
+function write_jsonl_entry(func_name, duration_ms, timestamp_ms)
+	if not S.jsonl_streaming_enabled or not S.jsonl_file_handle then
+		return
+	end
+
+	-- Format: {"ts": 123.456, "fn": "module.Function", "dur_ms": 2.5}
+	local line = string.format('{"ts":%.3f,"fn":"%s","dur_ms":%.3f}\n', timestamp_ms or 0, func_name, duration_ms)
+
+	if S.JSONL_BUFFER_THRESHOLD > 0 then
+		-- Buffered write mode
+		table.insert(S.jsonl_buffer, line)
+		S.jsonl_buffer_size = S.jsonl_buffer_size + 1
+
+		if S.jsonl_buffer_size >= S.JSONL_BUFFER_THRESHOLD then
+			flush_jsonl_buffer()
+		end
+	else
+		-- Immediate write mode
+		local ok, err = pcall(function()
+			S.jsonl_file_handle:write(line)
+			S.jsonl_file_handle:flush() -- Ensure external tools can read immediately
+		end)
+		if ok then
+			S.jsonl_write_count = S.jsonl_write_count + 1
+		else
+			-- Log error but don't crash
+			if DEVTOOLS_VERBOSE then
+				printf("[DEVTOOLS] JSONL write error: " .. tostring(err))
+			end
+		end
+	end
+end
+
+-- Flush the buffer to file
+function flush_jsonl_buffer()
+	if not S.jsonl_file_handle or S.jsonl_buffer_size == 0 then
+		return
+	end
+
+	local ok, err = pcall(function()
+		local content = table.concat(S.jsonl_buffer)
+		S.jsonl_file_handle:write(content)
+		S.jsonl_file_handle:flush()
+	end)
+
+	if ok then
+		S.jsonl_write_count = S.jsonl_write_count + S.jsonl_buffer_size
+	else
+		if DEVTOOLS_VERBOSE then
+			printf("[DEVTOOLS] JSONL buffer flush error: " .. tostring(err))
+		end
+	end
+
+	S.jsonl_buffer = {}
+	S.jsonl_buffer_size = 0
+end
+
+-- Reset JSONL stream (for "Reset Stats" functionality)
+-- Closes current file and starts a fresh one to allow multiple samples
+function reset_jsonl_stream()
+	-- Only act if streaming was active
+	if not S.jsonl_streaming_enabled and not S.jsonl_file_handle then
+		-- Streaming was never started - just ensure state is clean
+		S.jsonl_write_count = 0
+		S.jsonl_buffer = {}
+		S.jsonl_buffer_size = 0
+		return true
+	end
+
+	-- Flush and close current file if open
+	if S.jsonl_file_handle then
+		flush_jsonl_buffer()
+		S.jsonl_file_handle:close()
+		S.jsonl_file_handle = nil
+	end
+
+	-- Reset state but keep streaming enabled
+	S.jsonl_write_count = 0
+	S.jsonl_buffer = {}
+	S.jsonl_buffer_size = 0
+	S.jsonl_start_time = time_global()
+
+	-- Reopen a fresh file
+	local path = get_jsonl_stream_path()
+	local file = io.open(path, "w") -- Overwrite to get fresh file
+	if not file then
+		printf("[DEVTOOLS] Failed to reopen JSONL stream file after reset: " .. tostring(path))
+		S.jsonl_streaming_enabled = false
+		S.jsonl_file_path = nil
+		return false
+	end
+
+	S.jsonl_file_handle = file
+	S.jsonl_file_path = path
+
+	printf("[DEVTOOLS] JSONL stream reset: " .. tostring(path))
+	return true
+end
+
+-- JSONL Live Streaming exports
+M.get_jsonl_stream_path = get_jsonl_stream_path
+M.start_jsonl_stream = start_jsonl_stream
+M.stop_jsonl_stream = stop_jsonl_stream
+M.is_jsonl_streaming = is_jsonl_streaming
+M.get_jsonl_stream_stats = get_jsonl_stream_stats
+M.write_jsonl_entry = write_jsonl_entry
+M.flush_jsonl_buffer = flush_jsonl_buffer
+M.reset_jsonl_stream = reset_jsonl_stream

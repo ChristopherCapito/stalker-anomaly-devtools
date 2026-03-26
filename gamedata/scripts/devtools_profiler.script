@@ -395,7 +395,101 @@ function reset_all()
 	for k in pairs(_child_time_stack) do
 		_child_time_stack[k] = nil
 	end
+
+	-- Ensure timing is disabled regardless of how reset_all was invoked
+	ENABLED = false
+	auto_profile_enabled = false
+
+	-- Clear module management state for complete reset.
+	-- Attempt to properly restore any still-wrapped functions before losing the originals table.
+	local registered_count = 0
+	for k in pairs(registered_modules) do
+		registered_modules[k] = nil
+		registered_count = registered_count + 1
+	end
+
+	-- Collect wrapped module names first (iterating while modifying is unsafe)
+	local modules_to_unwrap = {}
+	for module_name in pairs(wrapped_modules) do
+		table.insert(modules_to_unwrap, module_name)
+	end
+	for _, module_name in ipairs(modules_to_unwrap) do
+		local module_table = _G[module_name]
+		if module_table then
+			unwrap_module(module_name, module_table) -- restores originals and clears wrapped_modules[name]
+		end
+	end
+	-- Clear any remaining entries (modules no longer in _G whose originals are lost)
+	for k in pairs(wrapped_modules) do
+		wrapped_modules[k] = nil
+	end
+	wrapped_function_count = 0
+
+	-- Clear shared state module management
+	for k in pairs(S.registered_modules) do
+		S.registered_modules[k] = nil
+	end
+	for k in pairs(S.wrapped_modules) do
+		S.wrapped_modules[k] = nil
+	end
+	S.wrapped_function_count = 0
+
+	printf("[DEVTOOLS] Reset cleared " .. tostring(registered_count) .. " registered modules")
+
+	-- Clear identity caches to prevent double-wrapping
+	for k in pairs(S.wrapped_funcs) do
+		S.wrapped_funcs[k] = nil
+	end
+	for k in pairs(S.wrapped_class_globals) do
+		S.wrapped_class_globals[k] = nil
+	end
+
+	-- Reset per-run traversal cache
+	S.reset_visited_tables()
+
+	-- Reset safety statistics
+	S.safety_stats.skipped_depth = 0
+	S.safety_stats.blacklist_violations = 0
+
+	-- Reset profiling state flags (ENABLED and auto_profile_enabled already set above)
+
 	reset_flamegraph()
+
+	-- Reset JSONL stream if active to allow multiple samples
+	if devtools_profiler_export and type(devtools_profiler_export.reset_jsonl_stream) == "function" then
+		devtools_profiler_export.reset_jsonl_stream()
+	end
+
+	-- Truncate exported CSV file (clear contents without deleting)
+	local appdata = getFS():update_path("$app_data_root$", "")
+	local csv_path
+	if appdata and appdata ~= "" then
+		csv_path = appdata .. "devtools\\devtools_profiler_export.csv"
+	else
+		local logs = getFS():update_path("$logs$", "")
+		if logs and logs ~= "" then
+			csv_path = logs .. "devtools\\devtools_profiler_export.csv"
+		end
+	end
+	if csv_path then
+		local f = io.open(csv_path, "w")
+		if f then f:close() end
+	end
+
+	-- Truncate exported call graph .dot file (clear contents without deleting)
+	local dot_path
+	if appdata and appdata ~= "" then
+		dot_path = appdata .. "devtools\\devtools_callgraph.dot"
+	else
+		local logs = getFS():update_path("$logs$", "")
+		if logs and logs ~= "" then
+			dot_path = logs .. "devtools\\devtools_callgraph.dot"
+		end
+	end
+	if dot_path then
+		local f = io.open(dot_path, "w")
+		if f then f:close() end
+	end
 end
 
 -- Get safety statistics (for debugging/monitoring)
@@ -514,9 +608,8 @@ function register_module(module_name)
 	end
 
 	registered_modules[module_name] = true
-	if DEVTOOLS_VERBOSE then
-		printf("[DEVTOOLS] Registered module for profiling: " .. tostring(module_name))
-	end
+	S.registered_modules[module_name] = true
+	printf("[DEVTOOLS] Registered module: " .. tostring(module_name) .. " (total: " .. tostring(#get_registered_modules()) .. ")")
 	return true
 end
 
@@ -535,6 +628,7 @@ function unregister_module(module_name)
 	end
 
 	registered_modules[module_name] = nil
+	S.registered_modules[module_name] = nil
 	if DEVTOOLS_VERBOSE then
 		printf("[DEVTOOLS] Unregistered module: " .. tostring(module_name))
 	end
@@ -565,6 +659,13 @@ local auto_profile_enabled = false
 -- Wrap a single function with timing
 local function wrap_function(module_name, func_name, original_func)
 	return function(...)
+		-- Fast path: skip all profiling overhead when disabled.
+		-- This prevents zombie wrappers (functions that failed to unwrap cleanly) from
+		-- calling init_stats and polluting S.stats after a Reset Stats or Stop Profiling.
+		if not ENABLED then
+			return original_func(...)
+		end
+
 		local full_name = module_name .. "." .. func_name
 
 		-- Runtime blacklist check (fail-safe)
@@ -642,6 +743,17 @@ local function wrap_function(module_name, func_name, original_func)
 		if my_stack_depth > 1 then
 			local parent_depth = my_stack_depth - 1
 			_child_time_stack[parent_depth] = (_child_time_stack[parent_depth] or 0) + duration_ms
+		end
+
+		-- JSONL Live Streaming: Write entry if streaming is enabled
+		if S.jsonl_streaming_enabled and duration_ms then
+			local timestamp_ms = 0
+			if S.jsonl_start_time then
+				timestamp_ms = time_global() - S.jsonl_start_time
+			end
+			if devtools_profiler_export and devtools_profiler_export.write_jsonl_entry then
+				devtools_profiler_export.write_jsonl_entry(full_name, duration_ms, timestamp_ms)
+			end
 		end
 
 		if flamegraph_enabled and ENABLED and duration_ms then
@@ -1229,9 +1341,12 @@ function enable()
         end
     end
 
+    -- Always enable flamegraph collection during profiling
+    enable_flamegraph()
+
     auto_profile_enabled = true
     ENABLED = true
-    printf("[DEVTOOLS] Auto-profiling ENABLED - wrapped " .. tostring(total) .. " functions")
+    printf("[DEVTOOLS] Auto-profiling ENABLED - wrapped " .. tostring(total) .. " functions (flamegraph collection active)")
 end
 
 -- Disable auto-profiling and restore original functions
@@ -1592,9 +1707,9 @@ function export_to_csv(filepath)
 	if not path or path == "" then
 		local appdata = getFS():update_path("$app_data_root$", "")
 		if appdata and appdata ~= "" then
-			path = appdata .. "devtools_profiler_export.csv"
+			path = appdata .. "devtools\\devtools_profiler_export.csv"
 		else
-			path = getFS():update_path("$logs$", "") .. "devtools_profiler_export.csv"
+			path = getFS():update_path("$logs$", "") .. "devtools\\devtools_profiler_export.csv"
 		end
 	end
 
@@ -1647,9 +1762,9 @@ end
 function get_csv_export_path()
 	local appdata = getFS():update_path("$app_data_root$", "")
 	if appdata and appdata ~= "" then
-		return appdata .. "devtools_profiler_export.csv"
+		return appdata .. "devtools\\devtools_profiler_export.csv"
 	else
-		return getFS():update_path("$logs$", "") .. "devtools_profiler_export.csv"
+		return getFS():update_path("$logs$", "") .. "devtools\\devtools_profiler_export.csv"
 	end
 end
 
@@ -1690,6 +1805,22 @@ function reset_flamegraph()
 	end
 	S.flamegraph_total_samples = 0
 	flamegraph_total_samples = 0
+
+	-- Truncate exported flamegraph file (clear contents without deleting)
+	local appdata = getFS():update_path("$app_data_root$", "")
+	local folded_path
+	if appdata and appdata ~= "" then
+		folded_path = appdata .. "devtools\\devtools_flamegraph.folded"
+	else
+		local logs = getFS():update_path("$logs$", "")
+		if logs and logs ~= "" then
+			folded_path = logs .. "devtools\\devtools_flamegraph.folded"
+		end
+	end
+	if folded_path then
+		local f = io.open(folded_path, "w")
+		if f then f:close() end
+	end
 end
 
 function export_flamegraph(filepath)
@@ -1702,9 +1833,9 @@ function export_flamegraph(filepath)
 	if not path or path == "" then
 		local appdata = getFS():update_path("$app_data_root$", "")
 		if appdata and appdata ~= "" then
-			path = appdata .. "devtools_flamegraph.folded"
+			path = appdata .. "devtools\\devtools_flamegraph.folded"
 		else
-			path = getFS():update_path("$logs$", "") .. "devtools_flamegraph.folded"
+			path = getFS():update_path("$logs$", "") .. "devtools\\devtools_flamegraph.folded"
 		end
 	end
 
@@ -1742,9 +1873,9 @@ end
 function get_flamegraph_export_path()
 	local appdata = getFS():update_path("$app_data_root$", "")
 	if appdata and appdata ~= "" then
-		return appdata .. "devtools_flamegraph.folded"
+		return appdata .. "devtools\\devtools_flamegraph.folded"
 	else
-		return getFS():update_path("$logs$", "") .. "devtools_flamegraph.folded"
+		return getFS():update_path("$logs$", "") .. "devtools\\devtools_flamegraph.folded"
 	end
 end
 
@@ -1840,11 +1971,13 @@ do
 			end
 
 			if total > 0 then
+				-- Always enable flamegraph collection during profiling
+				enable_flamegraph()
 				ENABLED = true
 				printf(
 					"[DEVTOOLS] EARLY LOAD: Wrapped "
 						.. tostring(total)
-						.. " functions in _g/axr_main BEFORE start_game_callback!"
+						.. " functions in _g/axr_main BEFORE start_game_callback! (flamegraph collection active)"
 				)
 			end
 		end
@@ -1942,6 +2075,60 @@ M.get_flamegraph_sample_count = get_flamegraph_sample_count
 M.export_flamegraph = export_flamegraph
 
 M.export_to_csv = export_to_csv
+
+-- ============================================================================
+-- JSONL LIVE STREAMING API
+-- ============================================================================
+
+function start_jsonl_stream()
+	if devtools_profiler_export and devtools_profiler_export.start_jsonl_stream then
+		return devtools_profiler_export.start_jsonl_stream()
+	end
+	return false
+end
+
+function stop_jsonl_stream()
+	if devtools_profiler_export and devtools_profiler_export.stop_jsonl_stream then
+		return devtools_profiler_export.stop_jsonl_stream()
+	end
+	return false
+end
+
+function is_jsonl_streaming()
+	if devtools_profiler_export and devtools_profiler_export.is_jsonl_streaming then
+		return devtools_profiler_export.is_jsonl_streaming()
+	end
+	return false
+end
+
+function get_jsonl_stream_stats()
+	if devtools_profiler_export and devtools_profiler_export.get_jsonl_stream_stats then
+		return devtools_profiler_export.get_jsonl_stream_stats()
+	end
+	return { enabled = false, path = nil, write_count = 0 }
+end
+
+function get_jsonl_stream_path()
+	if devtools_profiler_export and devtools_profiler_export.get_jsonl_stream_path then
+		return devtools_profiler_export.get_jsonl_stream_path()
+	end
+	return nil
+end
+
+M.start_jsonl_stream = start_jsonl_stream
+M.stop_jsonl_stream = stop_jsonl_stream
+M.is_jsonl_streaming = is_jsonl_streaming
+M.get_jsonl_stream_stats = get_jsonl_stream_stats
+M.get_jsonl_stream_path = get_jsonl_stream_path
+
+function reset_jsonl_stream()
+	if devtools_profiler_export and devtools_profiler_export.reset_jsonl_stream then
+		return devtools_profiler_export.reset_jsonl_stream()
+	end
+	return false
+end
+
+M.reset_jsonl_stream = reset_jsonl_stream
 
 -- Provide the API that the UI expects
 function M.is_enabled()

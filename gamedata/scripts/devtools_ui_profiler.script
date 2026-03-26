@@ -96,9 +96,17 @@ local callgraph_min_total_ms_text = "0"
 -- Flamegraph export state
 local last_flamegraph_export_path = nil
 local last_flamegraph_export_time = 0
-local flamegraph_collect_message = nil
-local flamegraph_collect_message_time = 0
-local FLAMEGRAPH_MESSAGE_DURATION = 3000
+
+-- JSONL streaming state
+local last_jsonl_stream_path = nil
+local last_jsonl_stream_count = 0
+local last_jsonl_stream_time = 0
+local JSONL_STREAM_MESSAGE_DURATION = 5000
+
+-- Combined export state
+local last_export_message = nil
+local last_export_message_time = 0
+local EXPORT_MESSAGE_DURATION = 5000
 
 -- Timed profiling state (shared with main imgui module)
 devtools_ui_profiler = devtools_ui_profiler or {}
@@ -115,7 +123,7 @@ devtools_ui_profiler.timed_profiling_auto_exported = false  -- Prevents multiple
 -- Helper function to perform auto-export when timed profiling completes
 local function perform_timed_profiling_auto_export()
 	local profiler_ok = (devtools_profiler ~= nil)
-	
+
 	-- Export CSV
 	if profiler_ok and type(devtools_profiler.export_to_csv) == "function" then
 		local success, path = devtools_profiler.export_to_csv()
@@ -123,11 +131,11 @@ local function perform_timed_profiling_auto_export()
 			last_csv_export_path = path
 			last_csv_export_time = time_global()
 			printf("[DEVTOOLS] Auto-exported CSV after timed profiling: " .. tostring(path))
-			else
+		else
 			printf("[DEVTOOLS] Failed to auto-export CSV after timed profiling")
 		end
 	end
-	
+
 	-- Export Flamegraph
 	if profiler_ok and type(devtools_profiler.export_flamegraph) == "function" then
 		local success, path = devtools_profiler.export_flamegraph()
@@ -137,6 +145,22 @@ local function perform_timed_profiling_auto_export()
 			printf("[DEVTOOLS] Auto-exported flamegraph after timed profiling: " .. tostring(path))
 		else
 			printf("[DEVTOOLS] Failed to auto-export flamegraph after timed profiling")
+		end
+	end
+
+	-- Export Call Graph
+	if devtools_profiler_export and type(devtools_profiler_export.export_callgraph_dot) == "function" then
+		local options = {
+			min_calls = callgraph_min_calls,
+			min_total_ms = callgraph_min_total_ms,
+		}
+		local success, path = devtools_profiler_export.export_callgraph_dot(nil, options)
+		if success then
+			last_callgraph_export_path = path
+			last_callgraph_export_time = time_global()
+			printf("[DEVTOOLS] Auto-exported call graph after timed profiling: " .. tostring(path))
+		else
+			printf("[DEVTOOLS] Failed to auto-export call graph after timed profiling")
 		end
 	end
 end
@@ -692,61 +716,96 @@ function render_profiling_controls()
 
 	if ImGui.Button("Reset Stats", vector2(100, 0)) then
 		if profiler_ok and type(devtools_profiler.reset_all) == "function" then
+			-- Stop profiling first to prevent immediate repopulation
+			if is_enabled and type(devtools_profiler.disable) == "function" then
+				devtools_profiler.disable()
+			end
 			devtools_profiler.reset_all()
+			-- Invalidate stats cache so the table clears immediately
+			cached_stats_display = {}
+			cached_total_time = 0
+			cached_total_calls = 0
+			cached_total_names = 0
+			last_stats_update = 0
+			-- Force refresh of module browser to clear any stale registration state
+			available_modules = devtools_profiler.discover_modules()
+			last_module_scan = 0
 		end
 	end
 	if ImGui.BeginItemTooltip() then
 		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-		ImGui.Text("Clear all collected statistics.\nUseful for starting a fresh profiling session.\nDoes not stop profiling - use Stop Profiling to do that.")
+		ImGui.Text("Stop profiling and clear all collected statistics.\nGives a completely fresh start.\nUse Start Profiling to resume.")
 		ImGui.PopTextWrapPos()
 		ImGui.EndTooltip()
 	end
 
 	ImGui.SameLine()
 
-	if ImGui.Button("Export CSV", vector2(100, 0)) then
-		if profiler_ok and type(devtools_profiler.export_to_csv) == "function" then
-			local success, path = devtools_profiler.export_to_csv()
-			if success then
-				last_csv_export_path = path
-				last_csv_export_time = time_global()
-			else
-				last_csv_export_path = nil
-				last_csv_export_time = 0
-			end
-		end
-	end
-	if ImGui.BeginItemTooltip() then
-		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-		ImGui.Text("Export all statistics to a CSV file.\nIncludes: Function name, call count, avg/median/min/max/total times.\nSaved to appdata folder. Open in Excel or any spreadsheet tool.")
-		ImGui.PopTextWrapPos()
-		ImGui.EndTooltip()
-	end
+ 	if ImGui.Button("Export All", vector2(120, 0)) then
+ 		local exported_count = 0
+ 		local export_paths = {}
 
-	ImGui.SameLine()
+ 		-- Export CSV
+ 		if profiler_ok and type(devtools_profiler.export_to_csv) == "function" then
+ 			local success, path = devtools_profiler.export_to_csv()
+ 			if success then
+ 				last_csv_export_path = path
+ 				last_csv_export_time = time_global()
+ 				exported_count = exported_count + 1
+ 				table.insert(export_paths, "CSV: " .. path)
+ 			else
+ 				last_csv_export_path = nil
+ 				last_csv_export_time = 0
+ 			end
+ 		end
 
-	if ImGui.Button("Export Call Graph", vector2(140, 0)) then
-		if devtools_profiler_export and type(devtools_profiler_export.export_callgraph_dot) == "function" then
-			local options = {
-				min_calls = callgraph_min_calls,
-				min_total_ms = callgraph_min_total_ms,
-			}
-			local success, path = devtools_profiler_export.export_callgraph_dot(nil, options)
-			if success then
-				last_callgraph_export_path = path
-				last_callgraph_export_time = time_global()
-			else
-				last_callgraph_export_path = nil
-				last_callgraph_export_time = 0
-			end
-		end
-	end
-	if ImGui.BeginItemTooltip() then
-		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-		ImGui.Text("Export call graph to Graphviz DOT format.\nUses min calls and min total ms filters below.\nSaved to appdata folder as devtools_callgraph.dot.")
-		ImGui.PopTextWrapPos()
-		ImGui.EndTooltip()
-	end
+ 		-- Export Call Graph
+ 		if devtools_profiler_export and type(devtools_profiler_export.export_callgraph_dot) == "function" then
+ 			local options = {
+ 				min_calls = callgraph_min_calls,
+ 				min_total_ms = callgraph_min_total_ms,
+ 			}
+ 			local success, path = devtools_profiler_export.export_callgraph_dot(nil, options)
+ 			if success then
+ 				last_callgraph_export_path = path
+ 				last_callgraph_export_time = time_global()
+ 				exported_count = exported_count + 1
+ 				table.insert(export_paths, "Call Graph: " .. path)
+ 			else
+ 				last_callgraph_export_path = nil
+ 				last_callgraph_export_time = 0
+ 			end
+ 		end
+
+ 		-- Export Flamegraph
+ 		if profiler_ok and type(devtools_profiler.export_flamegraph) == "function" then
+ 			local success, path = devtools_profiler.export_flamegraph()
+ 			if success then
+ 				last_flamegraph_export_path = path
+ 				last_flamegraph_export_time = time_global()
+ 				exported_count = exported_count + 1
+ 				table.insert(export_paths, "Flamegraph: " .. path)
+ 			else
+ 				last_flamegraph_export_path = nil
+ 				last_flamegraph_export_time = 0
+ 			end
+ 		end
+
+ 		-- Show export summary message
+ 		if exported_count > 0 then
+ 			local message = string.format("Exported %d formats: %s", exported_count, table.concat(export_paths, ", "))
+ 			-- Store the message for display (you might want to add this to your UI state)
+ 			if not last_export_message then last_export_message = "" end
+ 			last_export_message = message
+ 			last_export_message_time = time_global()
+ 		end
+ 	end
+ 	if ImGui.BeginItemTooltip() then
+ 		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+ 		ImGui.Text("Export all profiling data in multiple formats:\n- CSV: Statistics table for Excel/spreadsheets\n- Call Graph: Graphviz DOT format for visualization\n- Flamegraph: .folded format for FlameGraph.pl/speedscope\n\nAll files saved to appdata/devtools/ folder.")
+ 		ImGui.PopTextWrapPos()
+ 		ImGui.EndTooltip()
+ 	end
 
 	ImGui.Spacing()
 	ImGui.Text("Call Graph Filters:")
@@ -839,74 +898,73 @@ function render_profiling_controls()
 		ImGui.Spacing()
 	end
 
-	ImGui.Text("Flamegraph Export:")
+
+
+	ImGui.Spacing()
+
+	-- ============================================================================
+	-- JSONL LIVE STREAMING CONTROLS
+	-- ============================================================================
+
+	ImGui.Text("Live JSONL Stream:")
 	ImGui.SameLine()
 
-	local fg_enabled = false
-	if profiler_ok and type(devtools_profiler.is_flamegraph_enabled) == "function" then
-		fg_enabled = devtools_profiler.is_flamegraph_enabled()
+	local jsonl_streaming = false
+	if profiler_ok and type(devtools_profiler.is_jsonl_streaming) == "function" then
+		jsonl_streaming = devtools_profiler.is_jsonl_streaming()
 	end
 
-	local _, new_fg_enabled = ImGui.Checkbox("Collect Data##flamegraph", fg_enabled)
-	if new_fg_enabled ~= fg_enabled then
-		if profiler_ok then
-			if new_fg_enabled and type(devtools_profiler.enable_flamegraph) == "function" then
-				devtools_profiler.enable_flamegraph()
-				flamegraph_collect_message = "Flamegraph data collection ENABLED"
-				flamegraph_collect_message_time = time_global()
-			elseif (not new_fg_enabled) and type(devtools_profiler.disable_flamegraph) == "function" then
-				devtools_profiler.disable_flamegraph()
-				flamegraph_collect_message = "Flamegraph data collection DISABLED"
-				flamegraph_collect_message_time = time_global()
+	if jsonl_streaming then
+		-- Stop button (red)
+		ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.6, 0.2, 0.2, 1))
+		ImGui.PushStyleColor(ImGuiCol.ButtonHovered, fcolor():set(0.8, 0.3, 0.3, 1))
+
+		if ImGui.Button("Stop Stream", vector2(100, 0)) then
+			if profiler_ok and type(devtools_profiler.stop_jsonl_stream) == "function" then
+				local success, path, count = devtools_profiler.stop_jsonl_stream()
+				if success then
+					last_jsonl_stream_path = path
+					last_jsonl_stream_count = count
+					last_jsonl_stream_time = time_global()
+				end
 			end
 		end
-	end
-	if ImGui.BeginItemTooltip() then
-		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-		ImGui.Text("Enable flamegraph data collection.\nCaptures call stack traces for each function call.\nUseful for visualizing performance bottlenecks.\nExported in .folded format for external tools.")
-		ImGui.PopTextWrapPos()
-		ImGui.EndTooltip()
-	end
 
-	ImGui.SameLine()
+		ImGui.PopStyleColor(2)
 
-	local sample_count = 0
-	if profiler_ok and type(devtools_profiler.get_flamegraph_sample_count) == "function" then
-		sample_count = devtools_profiler.get_flamegraph_sample_count() or 0
-	end
-
-	local has_flamegraph_data = (sample_count > 0)
-	local can_export_flamegraph = fg_enabled or has_flamegraph_data
-
-	if not can_export_flamegraph then
-		ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.3, 0.3, 0.3, 1))
-	end
-
-	if ImGui.Button("Export Flamegraph", vector2(130, 0)) then
-		if can_export_flamegraph and profiler_ok and type(devtools_profiler.export_flamegraph) == "function" then
-			local success, path = devtools_profiler.export_flamegraph()
-			if success then
-				last_flamegraph_export_path = path
-				last_flamegraph_export_time = time_global()
-			else
-				last_flamegraph_export_path = nil
-				last_flamegraph_export_time = 0
-			end
-		end
-	end
-
-	if not can_export_flamegraph then
-		ImGui.PopStyleColor(1)
+		-- Show streaming stats
 		ImGui.SameLine()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
-		ImGui.Text("(enable collection first)")
+		local stats = devtools_profiler.get_jsonl_stream_stats()
+		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+		ImGui.Text(string.format("STREAMING (%d entries)", stats.write_count or 0))
 		ImGui.PopStyleColor(1)
+	else
+		-- Start button (green)
+		ImGui.PushStyleColor(ImGuiCol.Button, fcolor():set(0.2, 0.5, 0.2, 1))
+		ImGui.PushStyleColor(ImGuiCol.ButtonHovered, fcolor():set(0.3, 0.7, 0.3, 1))
+
+		if ImGui.Button("Start Stream", vector2(100, 0)) then
+			if profiler_ok and type(devtools_profiler.start_jsonl_stream) == "function" then
+				devtools_profiler.start_jsonl_stream()
+			end
+		end
+
+		ImGui.PopStyleColor(2)
 	end
+
 	if ImGui.BeginItemTooltip() then
 		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-		ImGui.Text("Export flamegraph data to a .folded file.\nVisualize in tools like FlameGraph.pl, speedscope, or Inferno.\nRequires 'Collect Data' to be enabled first.")
+		ImGui.Text("Stream function call data to JSONL file in real-time.\n\nFormat: {ts, fn, dur_ms} per line\n\nExternal tools can tail the file for live monitoring.\nPath: appdata/devtools/devtools_profiler_live.jsonl")
 		ImGui.PopTextWrapPos()
 		ImGui.EndTooltip()
+	end
+
+	-- Show last stream info
+	if last_jsonl_stream_path and (time_global() - last_jsonl_stream_time) < JSONL_STREAM_MESSAGE_DURATION then
+		ImGui.SameLine()
+		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.9, 1, 1))
+		ImGui.Text(string.format("Saved: %d entries", last_jsonl_stream_count or 0))
+		ImGui.PopStyleColor(1)
 	end
 
 	ImGui.Spacing()
@@ -1068,78 +1126,17 @@ function render_profiling_controls()
 		show_self_max = new_self_max
 	end
 
-	-- CSV export path display
-	if last_csv_export_path and (time_global() - last_csv_export_time) < CSV_EXPORT_MESSAGE_DURATION then
-		ImGui.Spacing()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
-		ImGui.Text("CSV exported to:")
-		ImGui.PopStyleColor(1)
-		ImGui.SameLine()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
-		ImGui.TextWrapped(last_csv_export_path)
-		ImGui.PopStyleColor(1)
-	elseif last_csv_export_path then
-		ImGui.Spacing()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
-		ImGui.Text("Last export:")
-		ImGui.PopStyleColor(1)
-		ImGui.SameLine()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
-		ImGui.TextWrapped(last_csv_export_path)
-		ImGui.PopStyleColor(1)
-	end
-
-	-- Show flamegraph collection status message
-	if flamegraph_collect_message and (time_global() - flamegraph_collect_message_time) < FLAMEGRAPH_MESSAGE_DURATION then
-		ImGui.Spacing()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
-		ImGui.Text(flamegraph_collect_message)
-		ImGui.PopStyleColor(1)
-	else
-		flamegraph_collect_message = nil
-	end
-
-	-- Show flamegraph export path message
-	if last_flamegraph_export_path and (time_global() - last_flamegraph_export_time) < CSV_EXPORT_MESSAGE_DURATION then
-		ImGui.Spacing()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
-		ImGui.Text("Flamegraph exported to:")
-		ImGui.PopStyleColor(1)
-		ImGui.SameLine()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
-		ImGui.TextWrapped(last_flamegraph_export_path)
-		ImGui.PopStyleColor(1)
-	elseif last_flamegraph_export_path then
-		ImGui.Spacing()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
-		ImGui.Text("Last flamegraph export:")
-		ImGui.PopStyleColor(1)
-		ImGui.SameLine()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
-		ImGui.TextWrapped(last_flamegraph_export_path)
-		ImGui.PopStyleColor(1)
-	end
-
-	-- Show call graph export path message
-	if last_callgraph_export_path and (time_global() - last_callgraph_export_time) < CALLGRAPH_EXPORT_MESSAGE_DURATION then
-		ImGui.Spacing()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
-		ImGui.Text("Call graph exported to:")
-		ImGui.PopStyleColor(1)
-		ImGui.SameLine()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
-		ImGui.TextWrapped(last_callgraph_export_path)
-		ImGui.PopStyleColor(1)
-	elseif last_callgraph_export_path then
-		ImGui.Spacing()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.5, 0.5, 0.5, 1))
-		ImGui.Text("Last call graph export:")
-		ImGui.PopStyleColor(1)
-		ImGui.SameLine()
-		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.6, 0.6, 0.6, 1))
-		ImGui.TextWrapped(last_callgraph_export_path)
-		ImGui.PopStyleColor(1)
-	end
+ 	-- Combined export message display
+ 	if last_export_message and (time_global() - last_export_message_time) < EXPORT_MESSAGE_DURATION then
+ 		ImGui.Spacing()
+ 		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.4, 1, 0.4, 1))
+ 		ImGui.Text("Exported:")
+ 		ImGui.PopStyleColor(1)
+ 		ImGui.SameLine()
+ 		ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
+ 		ImGui.TextWrapped(last_export_message)
+ 		ImGui.PopStyleColor(1)
+ 	end
 
 	if new_hide ~= hide_fast_functions then
 		hide_fast_functions = new_hide

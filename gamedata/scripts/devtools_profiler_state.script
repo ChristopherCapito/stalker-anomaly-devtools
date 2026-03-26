@@ -207,6 +207,19 @@ function S.reset_wrapped_class_globals()
 end
 
 -- ============================================================================
+-- JSONL LIVE STREAMING STATE
+-- ============================================================================
+
+S.jsonl_streaming_enabled = false -- Is streaming currently active?
+S.jsonl_file_handle = nil -- File handle for appending
+S.jsonl_file_path = nil -- Current file path
+S.jsonl_start_time = nil -- Timestamp when streaming started (for relative ts)
+S.jsonl_write_count = 0 -- Number of lines written (for stats)
+S.jsonl_buffer = {} -- Buffer for batched writes
+S.jsonl_buffer_size = 0 -- Current buffer size
+S.JSONL_BUFFER_THRESHOLD = 10 -- Flush after N entries (0 = immediate write)
+
+-- ============================================================================
 -- DEFERRED SYSTEM TABLE REGISTRATION
 -- ============================================================================
 

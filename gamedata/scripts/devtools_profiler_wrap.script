@@ -109,6 +109,20 @@ local function wrap_function(module_name, func_name, original_func)
 			S.flamegraph_total_samples = S.flamegraph_total_samples + 1
 		end
 
+		-- JSONL Live Streaming: Write entry if streaming is enabled
+		if S.jsonl_streaming_enabled and duration_ms then
+			-- Calculate relative timestamp from streaming start
+			local timestamp_ms = 0
+			if S.jsonl_start_time then
+				timestamp_ms = time_global() - S.jsonl_start_time
+			end
+
+			-- Use export module to write entry
+			if devtools_profiler_export and devtools_profiler_export.write_jsonl_entry then
+				devtools_profiler_export.write_jsonl_entry(full_name, duration_ms, timestamp_ms)
+			end
+		end
+
 		-- Pop callback name frame if we added one
 		if callback_name then
 			table.remove(S.active_call_stack)

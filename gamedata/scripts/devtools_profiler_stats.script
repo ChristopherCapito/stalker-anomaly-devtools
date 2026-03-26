@@ -276,15 +276,26 @@ end
 
 -- Reset all statistics
 function reset_all()
-	S.stats = {}
-	S.timer_stacks = {}
+	-- Clear tables in place to preserve references held by other modules
+	for k in pairs(S.stats) do
+		S.stats[k] = nil
+	end
+	for k in pairs(S.timer_stacks) do
+		S.timer_stacks[k] = nil
+	end
 	-- Also reset flamegraph via export module if available
 	if devtools_profiler_export and devtools_profiler_export.reset_flamegraph then
 		devtools_profiler_export.reset_flamegraph()
 	else
 		-- Direct reset if export module not loaded yet
-		S.flamegraph_samples = {}
+		for k in pairs(S.flamegraph_samples) do
+			S.flamegraph_samples[k] = nil
+		end
 		S.flamegraph_total_samples = 0
+	end
+	-- Reset JSONL stream if available
+	if devtools_profiler_export and devtools_profiler_export.reset_jsonl_stream then
+		devtools_profiler_export.reset_jsonl_stream()
 	end
 end
 
