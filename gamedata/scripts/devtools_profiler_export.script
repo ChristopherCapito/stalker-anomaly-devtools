@@ -151,8 +151,8 @@ function reset_flamegraph()
 end
 
 function export_flamegraph(filepath)
-	if not S.flamegraph_enabled or S.flamegraph_total_samples == 0 then
-		printf("[DEVTOOLS] No flamegraph data to export (enable flamegraph collection first)")
+	if S.flamegraph_total_samples == 0 then
+		printf("[DEVTOOLS] No flamegraph data to export")
 		return false
 	end
 

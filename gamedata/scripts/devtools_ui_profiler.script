@@ -89,9 +89,7 @@ local last_callgraph_export_path = nil
 local last_callgraph_export_time = 0
 local CALLGRAPH_EXPORT_MESSAGE_DURATION = 5000
 local callgraph_min_calls = 1
-local callgraph_min_calls_text = "1"
 local callgraph_min_total_ms = 0
-local callgraph_min_total_ms_text = "0"
 
 -- Flamegraph export state
 local last_flamegraph_export_path = nil
@@ -619,6 +617,7 @@ function render_profiling_controls()
 				devtools_profiler.disable()
 			end
 			P.timed_profiling_enabled = false
+			perform_timed_profiling_auto_export()
 		end
 		if ImGui.BeginItemTooltip() then
 			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
@@ -688,39 +687,30 @@ function render_profiling_controls()
 			ImGui.PopStyleColor(1)
 		end
 
-		-- Timed profiling controls (single input field - 0 or empty = unlimited)
-		ImGui.SameLine(0, 20)
-		ImGui.Text("Time (sec):")
-		ImGui.SameLine()
-		local new_text, text_changed = ImGui.InputText("##duration", P.profiling_duration_text, 6)
-		if text_changed then
-			P.profiling_duration_text = new_text
-			local num = tonumber(new_text)
-			if num then
-				-- Allow 0-300 seconds (0 = unlimited/no auto-stop)
-				P.profiling_duration_sec = math.max(0, math.min(300, math.floor(num)))
-			else
-				-- Empty or invalid = 0 (unlimited)
-				P.profiling_duration_sec = 0
-			end
-		end
-		if ImGui.BeginItemTooltip() then
-			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-			ImGui.Text("Profiling duration in seconds.\n0 or empty = unlimited (manual stop required).\n>0 = auto-stop and auto-export after N seconds.\nRange: 0-300 seconds (5 minutes max).")
-			ImGui.PopTextWrapPos()
-			ImGui.EndTooltip()
-		end
 	end
 
 	ImGui.SameLine(0, 20)
 
 	if ImGui.Button("Reset Stats", vector2(100, 0)) then
 		if profiler_ok and type(devtools_profiler.reset_all) == "function" then
+			-- Save registered modules so selection survives the reset
+			local saved_modules = {}
+			if type(devtools_profiler.get_registered_modules) == "function" then
+				for _, mod_name in ipairs(devtools_profiler.get_registered_modules()) do
+					saved_modules[#saved_modules + 1] = mod_name
+				end
+			end
 			-- Stop profiling first to prevent immediate repopulation
 			if is_enabled and type(devtools_profiler.disable) == "function" then
 				devtools_profiler.disable()
 			end
 			devtools_profiler.reset_all()
+			-- Restore module registrations so checkboxes stay ticked
+			if type(devtools_profiler.register_module) == "function" then
+				for _, mod_name in ipairs(saved_modules) do
+					devtools_profiler.register_module(mod_name)
+				end
+			end
 			-- Invalidate stats cache so the table clears immediately
 			cached_stats_display = {}
 			cached_total_time = 0
@@ -739,113 +729,28 @@ function render_profiling_controls()
 		ImGui.EndTooltip()
 	end
 
-	ImGui.SameLine()
-
- 	if ImGui.Button("Export All", vector2(120, 0)) then
- 		local exported_count = 0
- 		local export_paths = {}
-
- 		-- Export CSV
- 		if profiler_ok and type(devtools_profiler.export_to_csv) == "function" then
- 			local success, path = devtools_profiler.export_to_csv()
- 			if success then
- 				last_csv_export_path = path
- 				last_csv_export_time = time_global()
- 				exported_count = exported_count + 1
- 				table.insert(export_paths, "CSV: " .. path)
- 			else
- 				last_csv_export_path = nil
- 				last_csv_export_time = 0
- 			end
- 		end
-
- 		-- Export Call Graph
- 		if devtools_profiler_export and type(devtools_profiler_export.export_callgraph_dot) == "function" then
- 			local options = {
- 				min_calls = callgraph_min_calls,
- 				min_total_ms = callgraph_min_total_ms,
- 			}
- 			local success, path = devtools_profiler_export.export_callgraph_dot(nil, options)
- 			if success then
- 				last_callgraph_export_path = path
- 				last_callgraph_export_time = time_global()
- 				exported_count = exported_count + 1
- 				table.insert(export_paths, "Call Graph: " .. path)
- 			else
- 				last_callgraph_export_path = nil
- 				last_callgraph_export_time = 0
- 			end
- 		end
-
- 		-- Export Flamegraph
- 		if profiler_ok and type(devtools_profiler.export_flamegraph) == "function" then
- 			local success, path = devtools_profiler.export_flamegraph()
- 			if success then
- 				last_flamegraph_export_path = path
- 				last_flamegraph_export_time = time_global()
- 				exported_count = exported_count + 1
- 				table.insert(export_paths, "Flamegraph: " .. path)
- 			else
- 				last_flamegraph_export_path = nil
- 				last_flamegraph_export_time = 0
- 			end
- 		end
-
- 		-- Show export summary message
- 		if exported_count > 0 then
- 			local message = string.format("Exported %d formats: %s", exported_count, table.concat(export_paths, ", "))
- 			-- Store the message for display (you might want to add this to your UI state)
- 			if not last_export_message then last_export_message = "" end
- 			last_export_message = message
- 			last_export_message_time = time_global()
- 		end
- 	end
- 	if ImGui.BeginItemTooltip() then
- 		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
- 		ImGui.Text("Export all profiling data in multiple formats:\n- CSV: Statistics table for Excel/spreadsheets\n- Call Graph: Graphviz DOT format for visualization\n- Flamegraph: .folded format for FlameGraph.pl/speedscope\n\nAll files saved to appdata/devtools/ folder.")
- 		ImGui.PopTextWrapPos()
- 		ImGui.EndTooltip()
- 	end
-
-	ImGui.Spacing()
-	ImGui.Text("Call Graph Filters:")
-	ImGui.SameLine()
-	ImGui.Text("Min Calls:")
-	ImGui.SameLine()
-	local new_min_calls_text, min_calls_changed = ImGui.InputText("##callgraph_min_calls", callgraph_min_calls_text, 6)
-	if min_calls_changed then
-		callgraph_min_calls_text = new_min_calls_text
-		local num = tonumber(new_min_calls_text)
-		if num then
-			callgraph_min_calls = math.max(1, math.floor(num))
+	-- Timed profiling duration (shown on its own row, only when not profiling)
+	if not is_enabled then
+		ImGui.Text("Time (sec):")
+		ImGui.SameLine()
+		local new_text, text_changed = ImGui.InputText("##duration", P.profiling_duration_text, 6)
+		if text_changed then
+			P.profiling_duration_text = new_text
+			local num = tonumber(new_text)
+			if num then
+				P.profiling_duration_sec = math.max(0, math.min(300, math.floor(num)))
+			else
+				P.profiling_duration_sec = 0
+			end
+		end
+		if ImGui.BeginItemTooltip() then
+			ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
+			ImGui.Text("Profiling duration in seconds.\n0 or empty = unlimited (manual stop required).\n>0 = auto-stop and auto-export after N seconds.\nRange: 0-300 seconds (5 minutes max).")
+			ImGui.PopTextWrapPos()
+			ImGui.EndTooltip()
 		end
 	end
-	if ImGui.BeginItemTooltip() then
-		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-		ImGui.Text("Minimum number of calls required to include an edge in the graph.\nDefault: 1")
-		ImGui.PopTextWrapPos()
-		ImGui.EndTooltip()
-	end
 
-	ImGui.SameLine()
-	ImGui.Text("Min Total (ms):")
-	ImGui.SameLine()
-	local new_min_total_text, min_total_changed = ImGui.InputText("##callgraph_min_total", callgraph_min_total_ms_text, 8)
-	if min_total_changed then
-		callgraph_min_total_ms_text = new_min_total_text
-		local num = tonumber(new_min_total_text)
-		if num then
-			callgraph_min_total_ms = math.max(0, num)
-		end
-	end
-	if ImGui.BeginItemTooltip() then
-		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)
-		ImGui.Text("Minimum total time (ms) required to include a node in the graph.\nDefault: 0")
-		ImGui.PopTextWrapPos()
-		ImGui.EndTooltip()
-	end
-
-	ImGui.Spacing()
 	ImGui.Separator()
 	ImGui.Spacing()
 
@@ -975,6 +880,10 @@ function render_profiling_controls()
 		auto_start = devtools_profiler.preset_exists("_AUTOLOAD_")
 	end
 
+	ImGui.PushStyleColor(ImGuiCol.Text, fcolor():set(0.7, 0.7, 0.7, 1))
+	ImGui.Text("Misc:")
+	ImGui.PopStyleColor(1)
+	ImGui.SameLine()
 	local _, new_auto_start = ImGui.Checkbox("Profile on Load", auto_start)
 	if ImGui.BeginItemTooltip() then
 		ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35)

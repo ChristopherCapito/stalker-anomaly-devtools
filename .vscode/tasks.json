@@ -7,6 +7,13 @@
 			"command": "& 'c:\\Projects\\stalker\\000 - Anomaly Devtools - CDEV\\deploy.ps1'",
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Package devtools",
+			"type": "shell",
+			"command": "& 'c:\\Projects\\stalker\\000 - Anomaly Devtools - CDEV\\package.ps1'",
+			"problemMatcher": [],
+			"group": "build"
 		}
 	]
 }

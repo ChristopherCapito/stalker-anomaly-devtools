@@ -756,7 +756,7 @@ local function wrap_function(module_name, func_name, original_func)
 			end
 		end
 
-		if flamegraph_enabled and ENABLED and duration_ms then
+		if S.flamegraph_enabled and ENABLED and duration_ms then
 			local stack_trace = {}
 			for i = 1, #active_call_stack do
 				table.insert(stack_trace, active_call_stack[i])
@@ -1354,17 +1354,8 @@ function disable()
 	-- Always disable global timing flag first
 	ENABLED = false
 
-	-- Auto-export flamegraph data if collection is enabled and has data
-	if flamegraph_enabled and flamegraph_total_samples > 0 then
-		printf("[DEVTOOLS] Auto-exporting flamegraph data before stopping...")
-		local success, path = export_flamegraph()
-		if success then
-			printf("[DEVTOOLS] Flamegraph auto-exported to: " .. tostring(path))
-		else
-			printf("[DEVTOOLS] Warning: Failed to auto-export flamegraph data")
-		end
-		disable_flamegraph()
-	elseif flamegraph_enabled then
+	-- Clean up flamegraph collection state (export is handled by the UI layer)
+	if flamegraph_enabled then
 		disable_flamegraph()
 	end
 
@@ -1824,8 +1815,8 @@ function reset_flamegraph()
 end
 
 function export_flamegraph(filepath)
-	if not S.flamegraph_enabled or (S.flamegraph_total_samples or 0) == 0 then
-		printf("[DEVTOOLS] No flamegraph data to export (enable flamegraph collection first)")
+	if (S.flamegraph_total_samples or 0) == 0 then
+		printf("[DEVTOOLS] No flamegraph data to export")
 		return false
 	end
 
