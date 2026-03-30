@@ -12,6 +12,7 @@
 - [Quick Start](#quick-start)
 - [Use Cases](#use-cases)
 - [Features in Detail](#features-in-detail)
+- [What's New in v1.3.5](#whats-new-in-v135)
 - [What's New in v1.3.0](#whats-new-in-v130)
 - [What's New in v1.2.2](#whats-new-in-v122)
 - [Important Notes](#important-notes)
@@ -53,6 +54,7 @@ Perfect for modders who want to **optimize their work, debug performance issues,
 ### 💾 Export & Analysis Tools
 - **CSV Export**: Dump statistics for spreadsheet analysis
 - **Flamegraph Export**: Visualize call stacks in [SpeedScope](https://www.speedscope.app/), [Inferno](https://www.brendangregg.com/flamegraph.html), or [FlameGraph.pl](https://github.com/brendangregg/FlameGraph)
+- **JSONL Live Streaming (Experimental)**: Real-time streaming export of function call data for external post-processing tools
 - Perfect for identifying bottlenecks and optimization targets
 
 ### ⚙️ Advanced Profiling Features
@@ -167,6 +169,13 @@ That's it. No code changes. No registration. No hassle.
 - Shows module dependencies and call patterns
 - Helps understand code architecture and flow
 
+**JSONL Live Streaming (Experimental)**
+- Streams individual function calls in real-time to a JSONL file (`.jsonl`)
+- Each line is a JSON object containing function call data
+- Uses buffered I/O for efficient disk writes
+- Suitable for external post-processing and custom analysis tools
+- UI controls for starting/stopping streams and exporting summaries
+
 ### Logging Tab
 
 - **Severity Levels**: DEBUG (blue), INFO (green), WARN (yellow), ERROR (red)
@@ -176,6 +185,13 @@ That's it. No code changes. No registration. No hassle.
 - **Clear Logs**: Wipe current log history
 
 ---
+
+## What's New in v1.3.5
+
+- 📡 **JSONL Live Streaming (Experimental)**: New real-time streaming export of function call data in JSONL format for post-processing and external tool integration
+- 🎛️ **JSONL Stream Controls (Experimental)**: UI controls for starting/stopping JSONL streams and exporting stream summaries
+- 🏗️ **Shared State Refactoring**: Profiler scripts now use a shared state module for improved consistency across modules
+- 🧹 **Export Logic Cleanup**: Streamlined export code paths for CSV, flamegraph, and JSONL
 
 ## What's New in v1.3.0
 
@@ -335,7 +351,7 @@ Found a bug? Have a feature request?
 
 **Created by:** CDEV
 
-**Version:** 1.3.0
+**Version:** 1.3.5
 
 **For:** S.T.A.L.K.E.R. Anomaly modding community
 

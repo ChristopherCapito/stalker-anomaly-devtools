@@ -1,4 +1,4 @@
-<h1>Anomaly DevTools - Profiler & Logger v1.3.0</h1>
+<h1>Anomaly DevTools - Profiler & Logger v1.3.5</h1>
 
 <p><strong>A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-code performance profiling and structured logging for any mod.</strong></p>
 
@@ -14,12 +14,21 @@
     <li><strong>CSV Export:</strong> Export profiling data to CSV for detailed analysis in Excel, Google Sheets, or other tools.</li>
     <li><strong>Flamegraph Export:</strong> Export call stack data in collapsed stacks format (`.folded`) for visualization in external tools like FlameGraph.pl, Inferno, and speedscope.</li>
     <li><strong>Call Graph Export:</strong> Export call graphs in DOT format for visualization in Graphviz and other tools. Analyze function call relationships and module dependencies.</li>
+    <li><strong>JSONL Live Streaming (Experimental):</strong> Real-time streaming export of function call data in JSONL format for post-processing and external tool integration. Includes buffered I/O and UI controls.</li>
     <li><strong>Self-Time Tracking:</strong> New self-time metrics (total, average, median, min, max) show time spent in a function excluding child calls. Provides clearer picture of actual function performance vs cumulative time.</li>
     <li><strong>Parent Function Tracking:</strong> Track caller relationships and identify most common callers for each function. Understand which code paths are invoking your slow functions.</li>
     <li><strong>Timed Profiling Auto-Export:</strong> CSV and flamegraph are now automatically exported when timed profiling completes. No more missing data when the timer expires.</li>
     <li><strong>ImGui Interface:</strong> Self-contained, user-friendly UI panel for controlling the profiler and viewing logs in-game.</li>
     <li><strong>Profile on Load:</strong> Automatically start profiling when the game loads or transitions between locations (optional).</li>
     <li><strong>Modular Architecture:</strong> Complete code refactoring splitting monolithic codebase into focused modules for better maintainability and extensibility.</li>
+</ul>
+
+<h2>What's New in v1.3.5</h2>
+<ul>
+    <li><strong>📡 JSONL Live Streaming (Experimental):</strong> New real-time streaming export of function call data in JSONL format for post-processing and external tool integration</li>
+    <li><strong>🎛️ JSONL Stream Controls (Experimental):</strong> UI controls for starting/stopping JSONL streams and exporting stream summaries</li>
+    <li><strong>🏗️ Shared State Refactoring:</strong> Profiler scripts now use a shared state module for improved consistency across modules</li>
+    <li><strong>🧹 Export Logic Cleanup:</strong> Streamlined export code paths for CSV, flamegraph, and JSONL</li>
 </ul>
 
 <h2>What's New in v1.3.0</h2>
@@ -86,7 +95,7 @@
 <h2>Files Included</h2>
 <ul>
     <li><code>devtools_profiler.script</code> - Core profiling engine</li>
-    <li><code>devtools_profiler_export.script</code> - Export functionality (CSV, flamegraph, DOT)</li>
+    <li><code>devtools_profiler_export.script</code> - Export functionality (CSV, flamegraph, DOT, JSONL)</li>
     <li><code>devtools_ui_profiler.script</code> - Profiler ImGui user interface</li>
     <li><code>devtools_ui_logging.script</code> - Logging ImGui user interface</li>
     <li><code>devtools_logging.script</code> - Structured logging system</li>
@@ -101,7 +110,7 @@
     <li><strong>Stack Overflow Protection:</strong> Multiple safeguards including module blacklists, function blacklists, and call depth limits</li>
     <li><strong>Performance Impact:</strong> Adds ~1-5% overhead when profiling. Disable during normal gameplay.</li>
     <li><strong>Configuration Storage:</strong> Presets are stored in <code>appdata/devtools/presets/devtools_presets.txt</code></li>
-    <li><strong>Export Locations:</strong> CSV exports to <code>appdata/devtools/devtools_profiler_export.csv</code>, flamegraph to <code>appdata/devtools/devtools_flamegraph.folded</code>, call graph to <code>appdata/devtools/devtools_callgraph.dot</code></li>
+    <li><strong>Export Locations:</strong> CSV exports to <code>appdata/devtools/devtools_profiler_export.csv</code>, flamegraph to <code>appdata/devtools/devtools_flamegraph.folded</code>, call graph to <code>appdata/devtools/devtools_callgraph.dot</code>, JSONL streams to <code>appdata/devtools/devtools_stream.jsonl</code></li>
 </ul>
 
 <h2>Tips</h2>

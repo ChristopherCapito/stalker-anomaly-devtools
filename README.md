@@ -120,6 +120,18 @@
 
 ---
 
+## 📝 Version 1.3.5
+
+✨ **New Features:**
+- **JSONL Live Streaming (Experimental)**: Real-time streaming export of function call data in JSONL format for post-processing and external tool integration
+- **JSONL Stream Controls (Experimental)**: UI controls for starting/stopping JSONL streams and exporting summaries
+
+🔧 **Changes:**
+- **Shared State Refactoring**: Profiler scripts now use a shared state module for improved consistency
+- **Export Logic Cleanup**: Streamlined export code paths for CSV, flamegraph, and JSONL
+
+---
+
 ## 📝 Version 1.3.0
 
 🔧 **Major Refactoring & Fixes:**

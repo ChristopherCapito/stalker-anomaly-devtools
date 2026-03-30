@@ -8,6 +8,7 @@ A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides performa
 - **Module Browser**: UI to discover and select modules to profile
 - **Profiling Presets**: Save and load module selections for quick switching
 - **Live Statistics**: Real-time function timing (calls, avg/min/max/total ms)
+- **JSONL Live Streaming (Experimental)**: Real-time streaming export of function call data in JSONL format
 - **Structured Logging**: Severity levels, categories, filtering, file output
 - **Category Browser**: Visual category management with colors and quick toggles
 - **Self-Contained UI**: ImGui panel with profiler stats and log viewer
@@ -152,6 +153,18 @@ devtools_profiler.get_flamegraph_export_path() -- Get default flamegraph export 
 **Note:** Flamegraph exports use the standard "collapsed stacks" format:
 `root;module.func;child.func <space> time_us`. This works with external tools like
 FlameGraph.pl, inferno, or speedscope.
+
+#### JSONL Streaming Export (Experimental)
+```lua
+devtools_profiler.start_jsonl_stream(filepath)   -- Start streaming function calls to JSONL file
+devtools_profiler.stop_jsonl_stream()            -- Stop active JSONL stream
+devtools_profiler.is_jsonl_streaming()           -- Check if JSONL stream is active
+devtools_profiler.get_jsonl_buffer_size()        -- Get current buffer size
+devtools_profiler.flush_jsonl_buffer()           -- Force flush buffer to disk
+devtools_profiler.export_jsonl_summary(filepath) -- Export JSONL stream summary
+```
+
+**Note:** JSONL streaming is an experimental feature. Each function call is written as a JSON line in real-time, suitable for external post-processing tools. The stream uses buffered I/O for performance.
 
 #### Wrapped Module Info
 ```lua

@@ -5,6 +5,16 @@ All notable changes to Anomaly DevTools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2026-03-30
+
+### Added
+- **JSONL Live Streaming (Experimental)**: New real-time streaming export of function call data in JSONL format. Captures individual function calls as they happen for post-processing and external tool integration. Includes configurable buffer management for efficient disk I/O. *This feature is experimental and may change in future releases.*
+- **JSONL Stream Controls (Experimental)**: UI controls for starting/stopping JSONL streams and exporting stream summaries directly from the profiler panel.
+
+### Changed
+- **Shared State Refactoring**: Profiler scripts now use a shared state module for flamegraph and export checks, reducing code duplication and improving consistency across modules.
+- **Export Logic Cleanup**: Streamlined export code paths for CSV, flamegraph, and JSONL with clearer separation of concerns.
+
 ## [1.3.0] - 2026-02-03
 
 ### Added

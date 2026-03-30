@@ -1,4 +1,4 @@
-[1.3.0] Anomaly DevTools - Profiler & Logger
+[1.3.5] Anomaly DevTools - Profiler & Logger
 
 **Creator:** CDEV
 
@@ -21,20 +21,13 @@ A standalone developer toolkit for S.T.A.L.K.E.R. Anomaly that provides zero-cod
 *   **Call Graph Export:** Export call graphs in DOT format for visualization in Graphviz.
 *   **ImGui Interface:** Self-contained UI panel for controlling the profiler and viewing logs.
 
-**What's New in v1.3.0:**
+**What's New in v1.3.5:**
 
 **Major Changes:**
-*   **Code Refactoring:** Split monolithic codebase into modular architecture for better maintainability
-*   **Self-Time Tracking:** New self-time metrics (total, avg, median, min, max) show actual function performance excluding child calls
-*   **Parent Function Tracking:** Track caller relationships and identify most common callers for each function
-*   **Call Graph Export:** Export call graphs in DOT format for visualization
-*   **Timed Profiling Auto-Export:** CSV and flamegraph automatically export when timed profiling completes
-
-**Fixes:**
-*   **Fixed:** Timed profiling reliability issues
-*   **Fixed:** Preset load/delete operations
-*   **Fixed:** Dropdown display issues
-*   **Improved:** Various UI refinements
+*   **JSONL Live Streaming (Experimental):** New real-time streaming export of function call data in JSONL format. Captures individual function calls as they happen for post-processing and external tool integration. Includes configurable buffer management for efficient disk I/O.
+*   **JSONL Stream Controls (Experimental):** UI controls for starting/stopping JSONL streams and exporting stream summaries directly from the profiler panel.
+*   **Shared State Refactoring:** Profiler scripts now use a shared state module for flamegraph and export checks, reducing code duplication and improving consistency across modules.
+*   **Export Logic Cleanup:** Streamlined export code paths for CSV, flamegraph, and JSONL with clearer separation of concerns.
 
 **Usage:**
 1.  Start the game.
